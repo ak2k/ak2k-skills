@@ -40,6 +40,7 @@
 
           packages = {
             krisp-cli = pkgs.python3.pkgs.callPackage ./krisp-cli { };
+            travel-rewards = pkgs.python3.pkgs.callPackage ./travel-rewards { };
           };
 
           treefmt = {
@@ -54,6 +55,14 @@
                 extraPythonPackages = with pkgs.python3.pkgs; [
                   click
                   httpx
+                ];
+              };
+              "travel-rewards" = {
+                extraPythonPackages = with pkgs.python3.pkgs; [
+                  click
+                  xlrd
+                  pyyaml
+                  rich
                 ];
               };
             };

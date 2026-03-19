@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "travel-rewards"
+version = "0.1.0"
+description = "CLI for tracking travel rewards, loyalty points, and credit card benefits"
+requires-python = ">=3.12"
+dependencies = ["click>=8.1", "xlrd>=2.0", "pyyaml>=6.0", "rich>=13.0"]
+
+[project.scripts]
+travel-rewards = "travel_rewards.cli:cli"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true

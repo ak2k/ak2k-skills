@@ -9,6 +9,7 @@ let
   # Each skill maps to a package name and a skills/ subdirectory.
   allSkills = [
     "krisp-cli"
+    "travel-rewards"
   ];
 in
 {
