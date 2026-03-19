@@ -7,7 +7,7 @@ name = "travel-rewards"
 version = "0.1.0"
 description = "CLI for tracking travel rewards, loyalty points, and credit card benefits"
 requires-python = ">=3.12"
-dependencies = ["click>=8.1", "xlrd>=2.0", "pyyaml>=6.0", "rich>=13.0"]
+dependencies = ["click>=8.1", "xlrd>=2.0", "pyyaml>=6.0", "rich>=13.0", "textual>=1.0"]
 
 [project.scripts]
 travel-rewards = "travel_rewards.cli:cli"

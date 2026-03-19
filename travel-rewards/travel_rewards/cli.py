@@ -876,3 +876,14 @@ def spend_goals_update(ctx: click.Context, goal_id: int, amount: float) -> None:
 def config_path(ctx: click.Context) -> None:
     """Print config directory path."""
     _output(ctx, {"config_dir": str(ctx.obj["data_dir"])})
+
+
+@cli.command("tui")
+@click.pass_context
+def tui(ctx: click.Context) -> None:
+    """Launch interactive TUI browser."""
+    from travel_rewards.tui import TravelRewardsApp
+
+    ctx.obj["db"].close()  # TUI opens its own connection
+    app = TravelRewardsApp(ctx.obj["data_dir"])
+    app.run()

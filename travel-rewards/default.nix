@@ -6,6 +6,7 @@
   xlrd,
   pyyaml,
   rich,
+  textual,
 }:
 
 buildPythonApplication {
@@ -23,6 +24,7 @@ buildPythonApplication {
     xlrd
     pyyaml
     rich
+    textual
   ];
 
   meta = {

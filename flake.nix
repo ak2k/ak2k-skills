@@ -63,6 +63,7 @@
                   xlrd
                   pyyaml
                   rich
+                  textual
                 ];
               };
             };
