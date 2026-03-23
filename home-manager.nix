@@ -6,10 +6,17 @@
 let
   cfg = config.programs.ak2k-skills;
 
-  # Each skill maps to a package name and a skills/ subdirectory.
-  allSkills = [
+  # Skills with a corresponding package in this flake.
+  packagedSkills = [
     "krisp-cli"
   ];
+
+  # Skills that only provide a SKILL.md (package comes from elsewhere).
+  skillOnlySkills = [
+    "siplink"
+  ];
+
+  allSkills = packagedSkills ++ skillOnlySkills;
 in
 {
   options.programs.ak2k-skills = {
@@ -48,7 +55,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    home.packages = map (name: cfg.package.${name}) cfg.skills;
+    home.packages = map (name: cfg.package.${name}) (builtins.filter (name: builtins.elem name packagedSkills) cfg.skills);
 
     # Symlink only the selected skill directories.
     home.file = lib.listToAttrs (
