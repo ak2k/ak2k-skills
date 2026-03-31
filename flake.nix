@@ -39,6 +39,7 @@
             packages;
 
           packages = {
+            claude-sessions = pkgs.python3.pkgs.callPackage ./claude-sessions { };
             krisp-cli = pkgs.python3.pkgs.callPackage ./krisp-cli { };
           };
 
@@ -50,6 +51,11 @@
 
             programs.mypy.enable = true;
             programs.mypy.directories = {
+              "claude-sessions" = {
+                extraPythonPackages = with pkgs.python3.pkgs; [
+                  click
+                ];
+              };
               "krisp-cli" = {
                 extraPythonPackages = with pkgs.python3.pkgs; [
                   click

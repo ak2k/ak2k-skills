@@ -1,0 +1,25 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "claude-sessions"
+version = "0.1.0"
+description = "List and search recent Claude Code sessions for easy resumption"
+requires-python = ">=3.12"
+dependencies = ["click"]
+
+[project.scripts]
+claude-sessions = "claude_sessions:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["claude_sessions.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true

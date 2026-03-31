@@ -8,6 +8,7 @@ let
 
   # Skills with a corresponding package in this flake.
   packagedSkills = [
+    "claude-sessions"
     "krisp-cli"
   ];
 
