@@ -2,6 +2,9 @@
 
 Discovers tools at runtime via MCP's tools/list, so it adapts automatically
 when Krisp adds or changes tools. Auth is OAuth 2.0 with PKCE.
+
+When Cloudflare blocks programmatic requests to api.krisp.ai, the CLI falls
+back to performing registration and token exchange through the user's browser.
 """
 
 import base64
@@ -50,17 +53,78 @@ def _load_json(path: Path) -> dict | None:
     return None
 
 
+def _is_cloudflare_blocked(response: httpx.Response) -> bool:
+    """Check if a response is a Cloudflare block page."""
+    ct = response.headers.get("content-type", "")
+    if "text/html" in ct and response.status_code in (403, 503):
+        return "cloudflare" in response.text.lower()
+    return False
+
+
+def _browser_post(url: str, payload: dict, *, port: int = REDIRECT_PORT) -> dict:
+    """POST to a URL via the user's browser to bypass Cloudflare.
+
+    Serves a local HTML page that uses fetch() to POST the payload,
+    then redirects the JSON response back to localhost.
+    """
+    result = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            path = urlparse(self.path).path
+            if path == "/result":
+                nonlocal result
+                qs = parse_qs(urlparse(self.path).query)
+                data = qs.get("data", [None])[0]
+                if data:
+                    result = json.loads(base64.urlsafe_b64decode(data + "=="))
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"<h1>Done! You can close this tab.</h1>")
+                return
+
+            # Serve the page that does the fetch
+            payload_json = json.dumps(payload)
+            html = f"""<!DOCTYPE html><html><body>
+<p>Registering client with Krisp...</p>
+<script>
+fetch("{url}", {{
+  method: "POST",
+  headers: {{"Content-Type": "application/json"}},
+  body: JSON.stringify({payload_json})
+}})
+.then(r => r.json())
+.then(data => {{
+  const encoded = btoa(JSON.stringify(data))
+    .replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, '');
+  window.location = "http://localhost:{port}/result?data=" + encoded;
+}})
+.catch(err => {{
+  document.body.innerHTML = "<h1>Error: " + err.message + "</h1>";
+}});
+</script></body></html>"""
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(html.encode())
+
+        def log_message(self, *args):
+            pass
+
+    server = HTTPServer(("localhost", port), Handler)
+    webbrowser.open(f"http://localhost:{port}/register")
+    server.handle_request()  # serve the HTML page
+    server.handle_request()  # receive the result redirect
+    server.server_close()
+    return result
+
+
 # --- OAuth ---
 
 
 def _discover_oauth() -> dict:
-    """Discover OAuth endpoints via RFC 9470 + RFC 8414.
-
-    Krisp's discovery advertises endpoints on api.krisp.ai, which may be
-    blocked by Cloudflare for some IPs. We discover normally but verify
-    the token endpoint is reachable; if not, rewrite api.krisp.ai URLs
-    to mcp.krisp.ai equivalents.
-    """
+    """Discover OAuth endpoints via RFC 9470 + RFC 8414."""
     base = MCP_URL.rsplit("/mcp", 1)[0]
     with httpx.Client() as c:
         r = c.get(f"{base}/.well-known/oauth-protected-resource")
@@ -76,44 +140,66 @@ def _discover_oauth() -> dict:
         if "error" in meta:
             raise click.ClickException(f"OAuth discovery failed: {meta}")
 
-        # Verify the token endpoint is reachable (Cloudflare may block api.krisp.ai)
-        token_ep = meta.get("token_endpoint", "")
-        if "api.krisp.ai" in token_ep:
-            try:
-                probe = c.post(token_ep, data={"grant_type": "probe"}, timeout=5)
-                ct = probe.headers.get("content-type", "")
-                if "text/html" in ct and "cloudflare" in probe.text.lower():
-                    raise httpx.HTTPError("Cloudflare block detected")
-            except httpx.HTTPError:
-                click.echo("api.krisp.ai blocked by Cloudflare, using mcp.krisp.ai proxy.", err=True)
-                for key in ("token_endpoint", "authorization_endpoint", "introspection_endpoint"):
-                    if key in meta and "api.krisp.ai" in meta[key]:
-                        meta[key] = meta[key].replace("api.krisp.ai", "mcp.krisp.ai")
-
         return meta
 
 
 def _register_client(meta: dict) -> dict | None:
-    """Dynamic client registration (RFC 7591) if supported."""
+    """Dynamic client registration (RFC 7591).
+
+    Tries a direct POST first; if Cloudflare blocks it, falls back to
+    performing the POST through the user's browser.
+    """
     reg_endpoint = meta.get("registration_endpoint")
     if not reg_endpoint:
         return None
+
+    reg_payload = {
+        "client_name": "krisp-cli",
+        "redirect_uris": [REDIRECT_URI],
+        "grant_types": ["authorization_code", "refresh_token"],
+        "response_types": ["code"],
+        "token_endpoint_auth_method": "none",
+    }
+
+    # Try direct POST
     with httpx.Client() as c:
-        r = c.post(
-            reg_endpoint,
-            json={
-                "client_name": "krisp-cli",
-                "redirect_uris": [REDIRECT_URI],
-                "grant_types": ["authorization_code", "refresh_token"],
-                "response_types": ["code"],
-                "token_endpoint_auth_method": "none",
-            },
-        )
-        if r.status_code in (200, 201):
-            data = r.json()
-            _save_json(CLIENT_PATH, data)
-            return data
+        try:
+            r = c.post(reg_endpoint, json=reg_payload)
+            if r.status_code in (200, 201) and not _is_cloudflare_blocked(r):
+                data = r.json()
+                _save_json(CLIENT_PATH, data)
+                return data
+        except httpx.HTTPError:
+            pass
+
+    # Fall back to browser-based registration
+    click.echo("Direct registration blocked, using browser fallback...")
+    data = _browser_post(reg_endpoint, reg_payload)
+    if data and "client_id" in data:
+        _save_json(CLIENT_PATH, data)
+        return data
     return None
+
+
+def _exchange_token(meta: dict, token_data_req: dict) -> dict:
+    """Exchange an authorization code for tokens.
+
+    Tries a direct POST first; if Cloudflare blocks it, falls back to
+    performing the exchange through the user's browser.
+    """
+    token_endpoint = meta["token_endpoint"]
+
+    with httpx.Client() as c:
+        try:
+            r = c.post(token_endpoint, data=token_data_req)
+            if r.status_code == 200 and not _is_cloudflare_blocked(r):
+                return r.json()
+        except httpx.HTTPError:
+            pass
+
+    # Fall back to browser-based token exchange
+    click.echo("Direct token exchange blocked, using browser fallback...")
+    return _browser_post(token_endpoint, token_data_req)
 
 
 def _refresh_token(token_data: dict) -> dict | None:
@@ -122,21 +208,24 @@ def _refresh_token(token_data: dict) -> dict | None:
     if not client or not token_data.get("refresh_token"):
         return None
     meta = _discover_oauth()
-    with httpx.Client() as c:
-        refresh_data = {
-            "grant_type": "refresh_token",
-            "refresh_token": token_data["refresh_token"],
-            "client_id": client["client_id"],
-        }
-        if client.get("client_secret"):
-            refresh_data["client_secret"] = client["client_secret"]
-        r = c.post(meta["token_endpoint"], data=refresh_data)
-        if r.status_code == 200:
-            new_data = r.json()
-            if "expires_in" in new_data:
-                new_data["expires_at"] = time.time() + new_data["expires_in"] - 60
-            _save_json(TOKEN_PATH, new_data)
-            return new_data
+    refresh_data = {
+        "grant_type": "refresh_token",
+        "refresh_token": token_data["refresh_token"],
+        "client_id": client["client_id"],
+    }
+    if client.get("client_secret"):
+        refresh_data["client_secret"] = client["client_secret"]
+
+    try:
+        new_data = _exchange_token(meta, refresh_data)
+    except Exception:
+        return None
+
+    if new_data and "access_token" in new_data:
+        if "expires_in" in new_data:
+            new_data["expires_at"] = time.time() + new_data["expires_in"] - 60
+        _save_json(TOKEN_PATH, new_data)
+        return new_data
     return None
 
 
@@ -259,10 +348,9 @@ def auth():
     if not client:
         client = _register_client(meta)
     if not client:
-        click.echo("Dynamic client registration not available.")
-        client_id = click.prompt("Client ID")
-        client = {"client_id": client_id}
-        _save_json(CLIENT_PATH, client)
+        raise click.ClickException(
+            "Client registration failed. Check your network connection."
+        )
 
     verifier, challenge = _pkce()
     state = secrets.token_urlsafe(16)
@@ -312,22 +400,23 @@ def auth():
         raise click.ClickException("Authentication failed — no code received.")
 
     # Exchange code for token
-    with httpx.Client() as c:
-        token_data_req = {
-            "grant_type": "authorization_code",
-            "code": auth_code,
-            "redirect_uri": REDIRECT_URI,
-            "client_id": client["client_id"],
-            "code_verifier": verifier,
-        }
-        if client.get("client_secret"):
-            token_data_req["client_secret"] = client["client_secret"]
-        r = c.post(meta["token_endpoint"], data=token_data_req)
-        r.raise_for_status()
-        token_data = r.json()
-        if "expires_in" in token_data:
-            token_data["expires_at"] = time.time() + token_data["expires_in"] - 60
-        _save_json(TOKEN_PATH, token_data)
+    token_data_req = {
+        "grant_type": "authorization_code",
+        "code": auth_code,
+        "redirect_uri": REDIRECT_URI,
+        "client_id": client["client_id"],
+        "code_verifier": verifier,
+    }
+    if client.get("client_secret"):
+        token_data_req["client_secret"] = client["client_secret"]
+
+    token_data = _exchange_token(meta, token_data_req)
+    if not token_data or "access_token" not in token_data:
+        raise click.ClickException("Token exchange failed — no access token received.")
+
+    if "expires_in" in token_data:
+        token_data["expires_at"] = time.time() + token_data["expires_in"] - 60
+    _save_json(TOKEN_PATH, token_data)
 
     click.echo("Authenticated successfully. Token cached.")
 
