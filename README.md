@@ -8,6 +8,7 @@ Structure and approach follows [Mic92/mics-skills](https://github.com/Mic92/mics
 
 | Skill | Description |
 |-------|-------------|
+| [claude-sessions](claude-sessions/) | List and search recent Claude Code sessions for resumption |
 | [krisp-cli](krisp-cli/) | Dynamic CLI for Krisp's MCP server — search meetings, action items, transcripts |
 
 ## Installation

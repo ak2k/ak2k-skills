@@ -54,17 +54,43 @@ def _load_json(path: Path) -> dict | None:
 
 
 def _discover_oauth() -> dict:
-    """Discover OAuth endpoints via RFC 9470 + RFC 8414."""
-    # Discovery is at the server root, not under /mcp
+    """Discover OAuth endpoints via RFC 9470 + RFC 8414.
+
+    Krisp's discovery advertises endpoints on api.krisp.ai, which may be
+    blocked by Cloudflare for some IPs. We discover normally but verify
+    the token endpoint is reachable; if not, rewrite api.krisp.ai URLs
+    to mcp.krisp.ai equivalents.
+    """
     base = MCP_URL.rsplit("/mcp", 1)[0]
     with httpx.Client() as c:
         r = c.get(f"{base}/.well-known/oauth-protected-resource")
         r.raise_for_status()
-        auth_server = r.json()["authorization_servers"][0]
+        res = r.json()
+        if "error" in res:
+            raise click.ClickException(f"OAuth discovery failed: {res}")
+        auth_server = res["authorization_servers"][0]
 
         r = c.get(f"{auth_server}/.well-known/oauth-authorization-server")
         r.raise_for_status()
-        return r.json()
+        meta = r.json()
+        if "error" in meta:
+            raise click.ClickException(f"OAuth discovery failed: {meta}")
+
+        # Verify the token endpoint is reachable (Cloudflare may block api.krisp.ai)
+        token_ep = meta.get("token_endpoint", "")
+        if "api.krisp.ai" in token_ep:
+            try:
+                probe = c.post(token_ep, data={"grant_type": "probe"}, timeout=5)
+                ct = probe.headers.get("content-type", "")
+                if "text/html" in ct and "cloudflare" in probe.text.lower():
+                    raise httpx.HTTPError("Cloudflare block detected")
+            except httpx.HTTPError:
+                click.echo("api.krisp.ai blocked by Cloudflare, using mcp.krisp.ai proxy.", err=True)
+                for key in ("token_endpoint", "authorization_endpoint", "introspection_endpoint"):
+                    if key in meta and "api.krisp.ai" in meta[key]:
+                        meta[key] = meta[key].replace("api.krisp.ai", "mcp.krisp.ai")
+
+        return meta
 
 
 def _register_client(meta: dict) -> dict | None:
