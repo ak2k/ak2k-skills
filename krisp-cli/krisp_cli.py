@@ -61,11 +61,16 @@ def _is_cloudflare_blocked(response: httpx.Response) -> bool:
     return False
 
 
-def _browser_post(url: str, payload: dict, *, port: int = REDIRECT_PORT) -> dict:
+def _browser_post(
+    url: str, payload: dict, *, form: bool = False, port: int = REDIRECT_PORT,
+) -> dict:
     """POST to a URL via the user's browser to bypass Cloudflare.
 
     Serves a local HTML page that uses fetch() to POST the payload,
     then redirects the JSON response back to localhost.
+
+    If form=True, sends as application/x-www-form-urlencoded (for OAuth
+    token endpoints). Otherwise sends as application/json (for registration).
     """
     result = {}
 
@@ -86,13 +91,19 @@ def _browser_post(url: str, payload: dict, *, port: int = REDIRECT_PORT) -> dict
 
             # Serve the page that does the fetch
             payload_json = json.dumps(payload)
+            if form:
+                body_expr = f"new URLSearchParams({payload_json}).toString()"
+                ct = "application/x-www-form-urlencoded"
+            else:
+                body_expr = f"JSON.stringify({payload_json})"
+                ct = "application/json"
             html = f"""<!DOCTYPE html><html><body>
-<p>Registering client with Krisp...</p>
+<p>Completing authentication with Krisp...</p>
 <script>
 fetch("{url}", {{
   method: "POST",
-  headers: {{"Content-Type": "application/json"}},
-  body: JSON.stringify({payload_json})
+  headers: {{"Content-Type": "{ct}"}},
+  body: {body_expr}
 }})
 .then(r => r.json())
 .then(data => {{
@@ -199,7 +210,7 @@ def _exchange_token(meta: dict, token_data_req: dict) -> dict:
 
     # Fall back to browser-based token exchange
     click.echo("Direct token exchange blocked, using browser fallback...")
-    return _browser_post(token_endpoint, token_data_req)
+    return _browser_post(token_endpoint, token_data_req, form=True)
 
 
 def _refresh_token(token_data: dict) -> dict | None:
