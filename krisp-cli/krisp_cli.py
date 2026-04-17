@@ -15,6 +15,7 @@ import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from typing import cast
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import click
@@ -49,7 +50,7 @@ def _save_json(path: Path, data: dict) -> None:
 
 def _load_json(path: Path) -> dict | None:
     if path.exists():
-        return json.loads(path.read_text())
+        return cast(dict, json.loads(path.read_text()))
     return None
 
 
@@ -62,7 +63,11 @@ def _is_cloudflare_blocked(response: httpx.Response) -> bool:
 
 
 def _browser_post(
-    url: str, payload: dict, *, form: bool = False, port: int = REDIRECT_PORT,
+    url: str,
+    payload: dict,
+    *,
+    form: bool = False,
+    port: int = REDIRECT_PORT,
 ) -> dict:
     """POST to a URL via the user's browser to bypass Cloudflare.
 
@@ -147,7 +152,7 @@ def _discover_oauth() -> dict:
 
         r = c.get(f"{auth_server}/.well-known/oauth-authorization-server")
         r.raise_for_status()
-        meta = r.json()
+        meta: dict = r.json()
         if "error" in meta:
             raise click.ClickException(f"OAuth discovery failed: {meta}")
 
@@ -177,7 +182,7 @@ def _register_client(meta: dict) -> dict | None:
         try:
             r = c.post(reg_endpoint, json=reg_payload)
             if r.status_code in (200, 201) and not _is_cloudflare_blocked(r):
-                data = r.json()
+                data: dict = r.json()
                 _save_json(CLIENT_PATH, data)
                 return data
         except httpx.HTTPError:
@@ -204,7 +209,7 @@ def _exchange_token(meta: dict, token_data_req: dict) -> dict:
         try:
             r = c.post(token_endpoint, data=token_data_req)
             if r.status_code == 200 and not _is_cloudflare_blocked(r):
-                return r.json()
+                return cast(dict, r.json())
         except httpx.HTTPError:
             pass
 
@@ -248,11 +253,11 @@ def _get_token() -> str:
         raise SystemExit(1)
 
     if data.get("expires_at", 0) > time.time():
-        return data["access_token"]
+        return cast(str, data["access_token"])
 
     refreshed = _refresh_token(data)
     if refreshed:
-        return refreshed["access_token"]
+        return cast(str, refreshed["access_token"])
 
     click.echo("Token expired. Run: krisp-cli auth", err=True)
     raise SystemExit(1)
@@ -306,7 +311,7 @@ class MCPClient:
             result = r.json()
             if "error" in result:
                 raise click.ClickException(json.dumps(result["error"]))
-            return result.get("result", {})
+            return cast(dict, result.get("result", {}))
 
     def _notify(self, method: str) -> None:
         self.client.post(
@@ -328,7 +333,7 @@ class MCPClient:
 
     def list_tools(self) -> list[dict]:
         result = self._post("tools/list")
-        return result.get("tools", [])
+        return cast(list[dict], result.get("tools", []))
 
     def call_tool(self, name: str, arguments: dict | None = None) -> dict:
         return self._post("tools/call", {"name": name, "arguments": arguments or {}})
@@ -359,9 +364,7 @@ def auth():
     if not client:
         client = _register_client(meta)
     if not client:
-        raise click.ClickException(
-            "Client registration failed. Check your network connection."
-        )
+        raise click.ClickException("Client registration failed. Check your network connection.")
 
     verifier, challenge = _pkce()
     state = secrets.token_urlsafe(16)

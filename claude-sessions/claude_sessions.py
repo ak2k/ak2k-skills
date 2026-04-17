@@ -6,6 +6,7 @@ import shlex
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import cast
 
 import click
 
@@ -36,7 +37,7 @@ def extract_user_text(msg: dict) -> str | None:
     if isinstance(content, list):
         for block in content:
             if isinstance(block, dict) and block.get("type") == "text":
-                return block.get("text", "")
+                return cast(str, block.get("text", ""))
     return None
 
 
@@ -50,7 +51,7 @@ def scan_session(jsonl_path: Path) -> dict | None:
     first_ts = None
     last_ts = None
     prev_ts = None
-    active_secs = 0
+    active_secs = 0.0
     line_count = 0
     topic_texts: list[str] = []
     awaiting_topic = True
