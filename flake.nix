@@ -6,6 +6,10 @@
     flake-parts.url = "github:hercules-ci/flake-parts";
     treefmt-nix.url = "github:numtide/treefmt-nix";
     treefmt-nix.inputs.nixpkgs.follows = "nixpkgs";
+
+    # Google Workspace CLI — upstream flake ships binary + ~100 agent skills
+    # (Gmail, Drive, Calendar, Sheets, Docs, Chat, Slides, Forms, Tasks, etc.)
+    googleworkspace-cli.url = "github:googleworkspace/cli";
   };
 
   outputs =
@@ -22,13 +26,19 @@
         inputs.treefmt-nix.flakeModule
       ];
 
-      flake.homeManagerModules.default = import ./home-manager.nix;
+      flake.homeManagerModules.default =
+        { ... }:
+        {
+          imports = [ ./home-manager.nix ];
+          _module.args.googleworkspaceCliSrc = inputs.googleworkspace-cli;
+        };
 
       perSystem =
         {
           pkgs,
           self',
           lib,
+          system,
           ...
         }:
         {
@@ -41,6 +51,10 @@
           packages = {
             claude-sessions = pkgs.python3.pkgs.callPackage ./claude-sessions { };
             krisp-cli = pkgs.python3.pkgs.callPackage ./krisp-cli { };
+
+            # Re-exported from upstream so consumers can pull binary + skills
+            # from ak2k-skills as a single input.
+            gws = inputs.googleworkspace-cli.packages.${system}.default;
           };
 
           treefmt = {
