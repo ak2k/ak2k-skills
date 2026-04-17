@@ -17,6 +17,7 @@ on:
       - '.github/workflows/**'
       - '**/pyproject.toml'
       - '**/*.py'
+  workflow_dispatch:
 
 concurrency:
   group: check-${{ github.ref }}
