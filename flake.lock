@@ -42,15 +42,16 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1774983075,
-        "narHash": "sha256-YyNIHbyZrLlXYtWxZY8Um19MsnLharmS+nWGWO89fsA=",
+        "lastModified": 1774981938,
+        "narHash": "sha256-Bj4gPklufU6p2JpvN6j7QViv7ghSn52jemeXPVXkhlk=",
         "owner": "googleworkspace",
         "repo": "cli",
-        "rev": "a3768d0e82ad83cca2da97724e46bea4ff0e6dbd",
+        "rev": "705fb0ecac6f4249679958f6325b809b63fdde17",
         "type": "github"
       },
       "original": {
         "owner": "googleworkspace",
+        "ref": "v0.22.5",
         "repo": "cli",
         "type": "github"
       }

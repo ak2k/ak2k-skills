@@ -9,7 +9,8 @@
 
     # Google Workspace CLI — upstream flake ships binary + ~100 agent skills
     # (Gmail, Drive, Calendar, Sheets, Docs, Chat, Slides, Forms, Tasks, etc.)
-    googleworkspace-cli.url = "github:googleworkspace/cli";
+    # Pinned to a release tag so Renovate can track it via github-releases.
+    googleworkspace-cli.url = "github:googleworkspace/cli/v0.22.5";
   };
 
   outputs =
