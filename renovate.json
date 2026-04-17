@@ -7,11 +7,13 @@
   "nix": {
     "enabled": true
   },
+  "automerge": true,
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": [
       "before 6am on monday"
-    ]
+    ],
+    "automerge": true
   },
   "customManagers": [
     {
@@ -27,16 +29,6 @@
     }
   ],
   "packageRules": [
-    {
-      "matchDatasources": [
-        "github-releases"
-      ],
-      "matchUpdateTypes": [
-        "patch",
-        "minor"
-      ],
-      "automerge": true
-    },
     {
       "matchDepNames": [
         "googleworkspace/cli"
