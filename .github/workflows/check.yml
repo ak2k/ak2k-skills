@@ -28,8 +28,17 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    name: check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest       # x86_64-linux
+          - ubuntu-24.04-arm    # aarch64-linux (nixos-gakmedia)
+          - macos-14            # aarch64-darwin (akms25, akmbp)
+          - macos-13            # x86_64-darwin (akms22)
     steps:
       - uses: actions/checkout@v4
 
