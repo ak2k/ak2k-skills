@@ -1,8 +1,12 @@
 # ak2k-skills
 
-LLM-useful CLI tools and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) skills, packaged with Nix.
+LLM-useful CLI tools and agent skills, packaged with Nix.
 
-Structure and approach follows [Mic92/mics-skills](https://github.com/Mic92/mics-skills).
+Installs into both [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
+and [opencode](https://opencode.ai) by default — each skill is symlinked into
+every directory listed in `programs.ak2k-skills.skillDirs`.
+
+Structure and approach is inspired by [Mic92/mics-skills](https://github.com/Mic92/mics-skills).
 
 ## Skills
 
@@ -10,30 +14,27 @@ Structure and approach follows [Mic92/mics-skills](https://github.com/Mic92/mics
 |-------|-------------|
 | [claude-sessions](claude-sessions/) | List and search recent Claude Code sessions for resumption |
 | [krisp-cli](krisp-cli/) | Dynamic CLI for Krisp's MCP server — search meetings, action items, transcripts |
+| `msgvault-query` | SQL analytics over a msgvault email/chat archive. Binary + skill from [`wesm/msgvault`](https://github.com/wesm/msgvault). |
 | [siplink](skills/siplink/) | Place a phone call via VoIP.ms (binary from elsewhere) |
 
-## Skill sets
+## Bundles
 
-Bundled skill sets sourced from other flake inputs. Each set installs a binary
-plus one `SKILL.md` per subdirectory of the upstream source.
+Bundles are skill sets re-exported from another flake as a single unit. Each
+bundle contributes many entries to the registry, all sharing one package.
 
-| Set | Description |
-|-----|-------------|
-| `gws` | Google Workspace CLI from [`googleworkspace/cli`](https://github.com/googleworkspace/cli) — ~100 skills covering Gmail, Drive, Calendar, Sheets, Docs, Chat, Slides, Forms, Tasks, and more |
+| Bundle | Description | Helper |
+|--------|-------------|--------|
+| `gws` | Google Workspace CLI from [`googleworkspace/cli`](https://github.com/googleworkspace/cli) — ~100 skills covering Gmail, Drive, Calendar, Sheets, Docs, Chat, Slides, Forms, Tasks, and more | `inputs.ak2k-skills.lib.bundles.gws` |
 
 ## Installation
 
-Add as a flake input and enable via home-manager:
+Add as a flake input and import the home-manager module:
 
 ```nix
 # flake.nix
 inputs.ak2k-skills.url = "github:ak2k/ak2k-skills";
 inputs.ak2k-skills.inputs.nixpkgs.follows = "nixpkgs-unstable";
 
-# Pass to home-manager and import the module:
-home-manager.extraSpecialArgs = {
-  ak2k-skills = inputs.ak2k-skills;
-};
 home-manager.sharedModules = [
   inputs.ak2k-skills.homeManagerModules.default
 ];
@@ -43,35 +44,55 @@ home-manager.sharedModules = [
 # home.nix or darwin.nix
 programs.ak2k-skills = {
   enable = true;
-  package = ak2k-skills.packages.${pkgs.stdenv.hostPlatform.system};
-  skillsSrc = ak2k-skills;
-  skills = [ "krisp-cli" ];
 
-  # Optional: enable the Google Workspace CLI skill set
-  skillSets.gws.enable = true;
-  # Or install only a subset:
-  # skillSets.gws = {
-  #   enable = true;
-  #   skills = [ "gws-gmail" "gws-drive" "persona-exec-assistant" ];
-  # };
+  # Default: every registered skill, including the entire gws bundle.
+  # Pass an explicit list to install a subset:
+  # skills =
+  #   [ "claude-sessions" "krisp-cli" "msgvault-query" ]
+  #     ++ inputs.ak2k-skills.lib.bundles.gws;
+
+  # Default: [ ".claude/skills" ".opencode/skills" ].
+  # Override to target only one harness:
+  # skillDirs = [ ".claude/skills" ];
 };
+```
+
+The module installs each selected skill's CLI (if one exists) into
+`home.packages` and symlinks the skill definition at `~/<skillDir>/<name>/`
+for every configured `skillDir`.
+
+## Registry introspection
+
+```sh
+# List every registered skill:
+nix eval .#legacyPackages.aarch64-darwin.skill-registry --apply builtins.attrNames
+
+# List skills in the gws bundle:
+nix eval .#lib.bundles.gws --json | jq
 ```
 
 ## Adding a new skill
 
-1. Create `<name>/` with `<name>.py`, `pyproject.toml`, `default.nix`, `README.md`
-2. Create `skills/<name>/SKILL.md`
-3. Add to `allSkills` in `home-manager.nix`
-4. Add to `packages` in `flake.nix`
+1. Create `<name>/` with `<name>.py`, `pyproject.toml`, `default.nix`, plus
+   the skill definition under `skills/<name>/SKILL.md`.
+2. In `<name>/default.nix`, add a `postInstall` that copies `../skills/<name>/.`
+   into `$out/share/skills/<name>/` (copy the shape from
+   [`krisp-cli/default.nix`](krisp-cli/default.nix)).
+3. Register the package in `flake.nix` under `perSystem.packages`.
+4. Add a registry entry in [`nix/registry.nix`](nix/registry.nix) pointing
+   `source` at `$out/share/skills/<name>` and `package` at the new package.
 
-## Adding a new skill set
+For a docs-only skill (no binary), skip the package and point `source` at
+the source tree directly — see the `siplink` entry as an example.
 
-Skill sets bundle ~N upstream skills from another flake under a single
-opt-in option. To add one:
+## Adding a new bundle
 
-1. Add the upstream flake as an input in `flake.nix`
-2. Re-export its binary in `packages.<name>` (perSystem)
-3. Thread the source into the module via `_module.args.<name>Src` in
-   `flake.homeManagerModules.default`
-4. Add a `skillSets.<name>` option to `home-manager.nix` with `enable` and
-   optional `skills` filter; wire it to `home.packages` / `home.file`
+Bundles re-use one upstream flake's binary across many skills. To add one:
+
+1. Add the upstream flake as an input in `flake.nix`.
+2. Re-export its binary in `perSystem.packages.<name>`.
+3. Extend [`nix/registry.nix`](nix/registry.nix) to enumerate the upstream's
+   `skills/` tree (`readDir` + `filterAttrs` by `SKILL.md` existence) and
+   emit one registry entry per directory, each pointing at the same package
+   and tagged `bundle = "<name>"`.
+4. Expose `flake.lib.bundles.<name>` for ergonomic consumer composition.
