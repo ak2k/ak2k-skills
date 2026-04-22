@@ -1,26 +1,19 @@
+# Home-manager module that installs ak2k-skills CLI binaries and symlinks
+# skill definitions into one or more agent harness directories. Reads the
+# registry via `_module.args.registry` (threaded in by flake.nix).
 {
   lib,
   config,
-  googleworkspaceCliSrc,
+  registry,
   ...
 }:
 let
   cfg = config.programs.ak2k-skills;
-
-  # Skills with a corresponding package in this flake.
-  packagedSkills = [
-    "claude-sessions"
-    "krisp-cli"
-  ];
-
-  # Skills that only provide a SKILL.md (package comes from elsewhere).
-  skillOnlySkills = [
-    "siplink"
-  ];
-
-  allSkills = packagedSkills ++ skillOnlySkills;
+  allSkills = builtins.attrNames registry;
 in
 {
+  imports = [ ./nix/skills-common.nix ];
+
   options.programs.ak2k-skills = {
     enable = lib.mkEnableOption "ak2k-skills LLM agent tools";
 
@@ -28,109 +21,52 @@ in
       type = lib.types.listOf (lib.types.enum allSkills);
       default = allSkills;
       description = ''
-        Which skills to install. Each entry installs the CLI tool into
-        `home.packages` and the corresponding skill definition into
-        `~/.claude/skills/<name>/`.
+        Skills to install. Each entry installs the CLI (if its registry
+        entry has a `package`) into `home.packages` and symlinks the skill
+        definition into every directory in `programs.ak2k-skills.skillDirs`.
 
-        Defaults to all available skills.
+        Defaults to every registered skill — including bundles like gws.
+        To install a subset, pass an explicit list. The
+        `inputs.ak2k-skills.lib.bundles.<name>` helper returns the skill
+        names for a given bundle so you can compose them ergonomically:
+
+            skills = [ "claude-sessions" "msgvault-query" ]
+              ++ inputs.ak2k-skills.lib.bundles.gws;
       '';
-      example = [
-        "krisp-cli"
-      ];
-    };
-
-    package = lib.mkOption {
-      type = lib.types.attrsOf lib.types.package;
-      description = ''
-        Attribute set of ak2k-skills packages (e.g.
-        `inputs.ak2k-skills.packages.''${system}`).
+      example = lib.literalExpression ''
+        [ "claude-sessions" "krisp-cli" "msgvault-query" ]
+          ++ inputs.ak2k-skills.lib.bundles.gws
       '';
     };
 
     skillsSrc = lib.mkOption {
-      type = lib.types.path;
+      type = lib.types.nullOr lib.types.path;
+      default = null;
       description = ''
-        Path to the ak2k-skills source tree. Used to locate the `skills/`
-        directory. Typically `inputs.ak2k-skills` (the flake source).
+        Deprecated. Skill files now ship inside each package at
+        `$out/share/skills/<name>/` (or are sourced directly from the flake
+        input for external bundles); this option is ignored.
       '';
-    };
-
-    skillSets = lib.mkOption {
-      default = { };
-      description = ''
-        Bundled skill sets sourced from other flake inputs. Each enabled set
-        installs its associated binary into `home.packages` and symlinks one
-        entry per SKILL.md into `~/.claude/skills/<name>/`.
-      '';
-      type = lib.types.submodule {
-        options.gws = lib.mkOption {
-          default = { };
-          description = ''
-            Google Workspace CLI (`gws`) from `googleworkspace/cli` — binary
-            plus ~100 agent skills covering Gmail, Drive, Calendar, Sheets,
-            Docs, Chat, Slides, Forms, Tasks, and more.
-          '';
-          type = lib.types.submodule {
-            options = {
-              enable = lib.mkEnableOption "Google Workspace CLI skills";
-
-              skills = lib.mkOption {
-                type = lib.types.nullOr (lib.types.listOf lib.types.str);
-                default = null;
-                description = ''
-                  Filter — list of upstream skill directory names to install.
-                  If `null` (the default), installs every skill shipped by
-                  `googleworkspace/cli`.
-                '';
-                example = [
-                  "gws-gmail"
-                  "gws-drive"
-                  "gws-calendar"
-                  "persona-exec-assistant"
-                ];
-              };
-            };
-          };
-        };
-      };
     };
   };
 
-  config = lib.mkIf cfg.enable (
-    let
-      gwsCfg = cfg.skillSets.gws;
-      gwsSkillsDir = "${googleworkspaceCliSrc}/skills";
-      gwsAvailable = lib.attrNames (
-        lib.filterAttrs (
-          name: type: type == "directory" && builtins.pathExists "${gwsSkillsDir}/${name}/SKILL.md"
-        ) (builtins.readDir gwsSkillsDir)
-      );
-      gwsSelected = if gwsCfg.skills == null then gwsAvailable else gwsCfg.skills;
-      gwsFiles = lib.optionalAttrs gwsCfg.enable (
-        lib.listToAttrs (
-          map (name: {
-            name = ".claude/skills/${name}";
-            value.source = "${gwsSkillsDir}/${name}";
-          }) gwsSelected
-        )
-      );
-    in
-    {
-      home.packages =
-        map (name: cfg.package.${name}) (
-          builtins.filter (name: builtins.elem name packagedSkills) cfg.skills
-        )
-        ++ lib.optional gwsCfg.enable cfg.package.gws;
+  config = lib.mkIf cfg.enable {
+    warnings =
+      lib.optional (cfg.skillsSrc != null)
+        "programs.ak2k-skills.skillsSrc is deprecated and ignored; skill files now ship inside each package or are sourced from the flake input directly.";
 
-      # Symlink only the selected skill directories.
-      home.file =
-        lib.listToAttrs (
-          map (name: {
-            name = ".claude/skills/${name}";
-            value.source = "${cfg.skillsSrc}/skills/${name}";
-          }) cfg.skills
-        )
-        // gwsFiles;
-    }
-  );
+    home.packages = lib.unique (
+      lib.filter (p: p != null) (map (name: registry.${name}.package or null) cfg.skills)
+    );
+
+    home.file = lib.listToAttrs (
+      lib.concatMap (
+        name:
+        map (dir: {
+          name = "${dir}/${name}";
+          value.source = registry.${name}.source;
+        }) cfg.skillDirs
+      ) cfg.skills
+    );
+  };
 }

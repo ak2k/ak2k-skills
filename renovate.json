@@ -26,12 +26,33 @@
       ],
       "datasourceTemplate": "github-releases",
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/flake\\.nix$/"
+      ],
+      "matchStrings": [
+        "msgvaultVersion = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+      ],
+      "depNameTemplate": "wesm/msgvault",
+      "datasourceTemplate": "github-releases",
+      "versioningTemplate": "semver",
+      "extractVersionTemplate": "^v(?<version>.*)$"
     }
   ],
   "packageRules": [
     {
       "matchDepNames": [
         "googleworkspace/cli"
+      ],
+      "schedule": [
+        "at any time"
+      ]
+    },
+    {
+      "matchDepNames": [
+        "wesm/msgvault"
       ],
       "schedule": [
         "at any time"
