@@ -28,10 +28,13 @@
     # itself (our atlassian-cli wraps it remotely), but the repo ships 5
     # high-quality workflow skills (triage-issue, spec-to-backlog,
     # capture-tasks-from-meeting-notes, generate-status-report,
-    # search-company-knowledge) under skills/. We track the tree as a
-    # non-flake input and surface them through the registry just like the
-    # gws bundle, so Atlassian's maintenance flows through to consumers
-    # with `nix flake update`.
+    # search-company-knowledge) under skills/. They are bundled INTO the
+    # atlassian-cli package output under share/skills/atlassian-cli/workflows/
+    # rather than registered as top-level skills — top-level registration
+    # adds ~625 idle tokens of always-on context per session for the five
+    # description frontmatters; nesting limits the cost to ours alone (~55
+    # tokens). The agent loads a workflow body via Read only after deciding
+    # the atlassian-cli skill is relevant.
     atlassian-mcp-skills.url = "github:atlassian/atlassian-mcp-server";
     atlassian-mcp-skills.flake = false;
   };
@@ -53,14 +56,6 @@
           name: type: type == "directory" && builtins.pathExists "${gwsSkillsDir}/${name}/SKILL.md"
         ) (builtins.readDir gwsSkillsDir)
       );
-
-      # Atlassian MCP workflow skills — same derivation, same source tree.
-      atlassianMcpSkillsDir = "${inputs.atlassian-mcp-skills}/skills";
-      atlassianMcpBundleSkills = lib.attrNames (
-        lib.filterAttrs (
-          name: type: type == "directory" && builtins.pathExists "${atlassianMcpSkillsDir}/${name}/SKILL.md"
-        ) (builtins.readDir atlassianMcpSkillsDir)
-      );
     in
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
@@ -78,10 +73,8 @@
       #
       #     programs.ak2k-skills.skills =
       #       [ "claude-sessions" "msgvault-query" ]
-      #         ++ inputs.ak2k-skills.lib.bundles.gws
-      #         ++ inputs.ak2k-skills.lib.bundles.atlassianMcp;
+      #         ++ inputs.ak2k-skills.lib.bundles.gws;
       flake.lib.bundles.gws = gwsBundleSkills;
-      flake.lib.bundles.atlassianMcp = atlassianMcpBundleSkills;
 
       flake.homeManagerModules.default =
         { pkgs, ... }:
@@ -128,7 +121,9 @@
         in
         {
           packages = {
-            atlassian-cli = pkgs.python3.pkgs.callPackage ./atlassian-cli { };
+            atlassian-cli = pkgs.python3.pkgs.callPackage ./atlassian-cli {
+              atlassianMcpSkills = "${inputs.atlassian-mcp-skills}/skills";
+            };
             claude-sessions = pkgs.python3.pkgs.callPackage ./claude-sessions { };
             krisp-cli = pkgs.python3.pkgs.callPackage ./krisp-cli { };
             gws = inputs.googleworkspace-cli.packages.${system}.default;

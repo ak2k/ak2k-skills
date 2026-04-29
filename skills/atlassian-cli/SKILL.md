@@ -77,6 +77,27 @@ browser will open the Atlassian consent screen — pick which Atlassian apps
 (Jira, Confluence, Compass) to grant access to. Tokens are cached at
 `~/.config/atlassian/token.json` and auto-refresh.
 
+# Workflow templates
+
+Atlassian's 5 official workflow skills ship under `./workflows/<name>/SKILL.md`
+relative to this skill's directory. They are NOT registered as top-level skills
+(intentional — keeps idle context lean); load the relevant one with the Read
+tool when the task fits.
+
+| Workflow | When to load it |
+|---|---|
+| `workflows/triage-issue/SKILL.md` | User reports a bug or error message. Searches Jira for duplicates, classifies the issue, helps create a structured ticket or augment an existing one. |
+| `workflows/spec-to-backlog/SKILL.md` | User has a spec / PRD doc (in Confluence or pasted) and wants it broken down into Jira epics + stories. |
+| `workflows/capture-tasks-from-meeting-notes/SKILL.md` | User has meeting notes (Confluence page or pasted text) and wants action items extracted into Jira issues with assignees. |
+| `workflows/generate-status-report/SKILL.md` | User wants a project status report — querying Jira via JQL, formatting, optionally publishing to Confluence. |
+| `workflows/search-company-knowledge/SKILL.md` | User has a question whose answer probably lives across Jira + Confluence; uses Rovo Search and synthesizes. |
+
+These workflows are written by Atlassian to invoke MCP tools by name
+(`searchJiraIssuesUsingJql(...)`, `getJiraIssue(...)`, `createJiraIssue(...)`,
+etc.). Translate each such reference into the equivalent
+`atlassian-cli call <name> '<json>'` invocation when executing the workflow's
+steps.
+
 # Notes
 
 - **Tool discovery is dynamic** — `atlassian-cli tools` is the source of truth. Atlassian's Remote MCP currently exposes ~33 tools; if the user's site has a different scope grant (e.g. no Compass), the list may differ.
