@@ -107,6 +107,7 @@
         in
         {
           packages = {
+            atlassian-cli = pkgs.python3.pkgs.callPackage ./atlassian-cli { };
             claude-sessions = pkgs.python3.pkgs.callPackage ./claude-sessions { };
             krisp-cli = pkgs.python3.pkgs.callPackage ./krisp-cli { };
             gws = inputs.googleworkspace-cli.packages.${system}.default;
@@ -155,6 +156,12 @@
 
             programs.mypy.enable = true;
             programs.mypy.directories = {
+              "atlassian-cli" = {
+                extraPythonPackages = with pkgs.python3.pkgs; [
+                  click
+                  httpx
+                ];
+              };
               "claude-sessions" = {
                 extraPythonPackages = with pkgs.python3.pkgs; [
                   click

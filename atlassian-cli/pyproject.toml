@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "atlassian-cli"
+version = "0.1.0"
+description = "Dynamic CLI for Atlassian's Remote MCP server over Streamable HTTP"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["click", "httpx"]
+
+[project.scripts]
+atlassian-cli = "atlassian_cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["atlassian_cli.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.mypy]
+python_version = "3.13"
+warn_return_any = true
+warn_unused_configs = true
