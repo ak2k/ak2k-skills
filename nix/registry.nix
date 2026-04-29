@@ -35,6 +35,10 @@ let
 
   # Skills whose files ship inside our own package outputs.
   ownEntries = {
+    atlassian-cli = {
+      source = "${sysPkgs.atlassian-cli}/share/skills/atlassian-cli";
+      package = sysPkgs.atlassian-cli;
+    };
     claude-sessions = {
       source = "${sysPkgs.claude-sessions}/share/skills/claude-sessions";
       package = sysPkgs.claude-sessions;
