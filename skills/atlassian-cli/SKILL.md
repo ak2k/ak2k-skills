@@ -88,3 +88,24 @@ browser will open the Atlassian consent screen — pick which Atlassian apps
 - **Issue link directionality:** for "Blocks", `inwardIssue` is the *blocker*, `outwardIssue` is the *blocked* item — i.e., "A is blocked by B" → `inwardIssue: B, outwardIssue: A`.
 - **Bitbucket is NOT covered** by Atlassian's Remote MCP. Use a separate tool for Bitbucket operations.
 - **Output is JSON** — pipe through `jq` for ad-hoc filtering.
+
+# Footguns
+
+These fail silently or produce surprising output rather than erroring loudly — call them out before invoking.
+
+- **ADF for `description` and `commentBody`.** `createJiraIssue.description`, `editJiraIssue.fields.description`, and `addCommentToJiraIssue.commentBody` expect [Atlassian Document Format](https://developer.atlassian.com/cloud/jira/platform/apis/document/structure/) JSON, not Markdown or plain text. Plain strings often render fine because the MCP wraps them, but `**bold**`, `# headings`, code fences, and tables render literally. For anything richer than a paragraph, build an ADF doc: `{"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "..."}]}]}`.
+- **Confluence `body.value` is XHTML/storage format, not Markdown.** Markdown pasted into `createConfluencePage` / `updateConfluencePage` `body.value` renders as literal text. If you need Markdown ingress, convert client-side first (e.g. `markdown` → storage via the Confluence REST API conversion endpoint, or use a tool like `mark` if installed).
+- **`updateConfluencePage` is optimistic-concurrency.** You must pass `version.number = current + 1`. Get the current version via `getConfluencePage` first, then increment. Stale `version.number` returns a 409.
+- **Custom fields require discovery.** Project-specific required fields surface only via `getJiraIssueTypeMetaWithFields` (per project + issue type). Calling `createJiraIssue` without them returns a 400 listing the missing fields, but it's faster to discover up front.
+- **Assignees take `accountId`, not email or display name.** Use `lookupJiraAccountId '{"query": "user@example.com"}'` to resolve. The same applies to most user-valued fields.
+- **`atlassianUserInfo` is the *acting* user**, not necessarily the *target* user — useful for `assignee = currentUser()` JQL but not for resolving "Adam".
+
+# Write-op safety
+
+The MCP omits delete/archive ops, but the writes it *does* expose can still cause real-world impact (state changes, notifications, version bumps, comment churn). Apply the same hygiene as for destructive ops:
+
+- **Before bulk write via JQL/CQL:** run the same query as a search call first and show the user the resolved targets (count + a sample of keys/titles). Don't iterate writes against an unverified target list.
+- **Before `transitionJiraIssue` / `editJiraIssue`:** name the target issue, the field changing, and the new value in your acknowledgement to the user, especially when the operation triggers notifications, workflow side effects, or downstream automation.
+- **`addWorklogToJiraIssue` and comments are visible to other watchers and may trigger notifications.** Confirm with the user before posting.
+- **`createIssueLink` is reversible but visible.** Get the link type wrong and you've published a wrong relationship publicly; the fix is a second call but the audit trail keeps both.
+- **Don't infer "current sprint" / "active project" silently.** When a user says "the bug" or "this sprint", confirm which one before writing. JQL like `assignee = currentUser() AND sprint in openSprints()` is fine for *reads*; for writes, pin to an explicit issue key.
