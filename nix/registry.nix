@@ -33,28 +33,16 @@ let
         ) (builtins.readDir gwsSkillsDir)
       );
 
-  # atlassian-mcp bundle: workflow skills shipped by Atlassian alongside
-  # their Remote MCP server. They reference MCP tool names directly
-  # (searchJiraIssuesUsingJql, getJiraIssue, createJiraIssue, etc.); our
-  # atlassian-cli wrapper exposes the same names via `atlassian-cli call
-  # <name>`, so the agent composes the two skills naturally — Atlassian's
-  # workflow steps + our routing layer.
-  atlassianMcpSkillsDir = "${inputs.atlassian-mcp-skills}/skills";
-  atlassianMcpEntries =
-    lib.mapAttrs
-      (name: _: {
-        source = "${atlassianMcpSkillsDir}/${name}";
-        package = sysPkgs.atlassian-cli;
-        bundle = "atlassian-mcp";
-      })
-      (
-        lib.filterAttrs (
-          name: type: type == "directory" && builtins.pathExists "${atlassianMcpSkillsDir}/${name}/SKILL.md"
-        ) (builtins.readDir atlassianMcpSkillsDir)
-      );
-
   # Skills whose files ship inside our own package outputs.
   ownEntries = {
+    # atlassian-cli ships Atlassian's 5 official workflow skills as nested
+    # subdirectories under workflows/ rather than as separate top-level
+    # registry entries. Top-level registration would add ~625 idle tokens of
+    # always-on context (5 description frontmatters loaded into every
+    # session); nesting keeps the idle cost to one description (~55 tokens),
+    # and the agent loads a workflow body via Read only after deciding the
+    # atlassian-cli skill is relevant. See atlassian-cli/default.nix for
+    # the bundling and skills/atlassian-cli/SKILL.md for the workflow index.
     atlassian-cli = {
       source = "${sysPkgs.atlassian-cli}/share/skills/atlassian-cli";
       package = sysPkgs.atlassian-cli;
@@ -78,4 +66,4 @@ let
     };
   };
 in
-ownEntries // gwsEntries // atlassianMcpEntries
+ownEntries // gwsEntries
