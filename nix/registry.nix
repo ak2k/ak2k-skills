@@ -33,6 +33,26 @@ let
         ) (builtins.readDir gwsSkillsDir)
       );
 
+  # atlassian-mcp bundle: workflow skills shipped by Atlassian alongside
+  # their Remote MCP server. They reference MCP tool names directly
+  # (searchJiraIssuesUsingJql, getJiraIssue, createJiraIssue, etc.); our
+  # atlassian-cli wrapper exposes the same names via `atlassian-cli call
+  # <name>`, so the agent composes the two skills naturally — Atlassian's
+  # workflow steps + our routing layer.
+  atlassianMcpSkillsDir = "${inputs.atlassian-mcp-skills}/skills";
+  atlassianMcpEntries =
+    lib.mapAttrs
+      (name: _: {
+        source = "${atlassianMcpSkillsDir}/${name}";
+        package = sysPkgs.atlassian-cli;
+        bundle = "atlassian-mcp";
+      })
+      (
+        lib.filterAttrs (
+          name: type: type == "directory" && builtins.pathExists "${atlassianMcpSkillsDir}/${name}/SKILL.md"
+        ) (builtins.readDir atlassianMcpSkillsDir)
+      );
+
   # Skills whose files ship inside our own package outputs.
   ownEntries = {
     atlassian-cli = {
@@ -58,4 +78,4 @@ let
     };
   };
 in
-ownEntries // gwsEntries
+ownEntries // gwsEntries // atlassianMcpEntries

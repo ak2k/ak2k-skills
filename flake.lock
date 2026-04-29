@@ -1,5 +1,21 @@
 {
   "nodes": {
+    "atlassian-mcp-skills": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1776196198,
+        "narHash": "sha256-sLanUxgcXEpPhB/W3m/ltOg303m8pqeFuUg+VDJI5k0=",
+        "owner": "atlassian",
+        "repo": "atlassian-mcp-server",
+        "rev": "9b52fb18e184edc307ce33f8bf4cdf148dedf1f2",
+        "type": "github"
+      },
+      "original": {
+        "owner": "atlassian",
+        "repo": "atlassian-mcp-server",
+        "type": "github"
+      }
+    },
     "flake-parts": {
       "inputs": {
         "nixpkgs-lib": "nixpkgs-lib"
@@ -140,6 +156,7 @@
     },
     "root": {
       "inputs": {
+        "atlassian-mcp-skills": "atlassian-mcp-skills",
         "flake-parts": "flake-parts",
         "googleworkspace-cli": "googleworkspace-cli",
         "msgvault": "msgvault",
