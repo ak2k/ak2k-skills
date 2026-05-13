@@ -37,6 +37,13 @@
     # the atlassian-cli skill is relevant.
     atlassian-mcp-skills.url = "github:atlassian/atlassian-mcp-server";
     atlassian-mcp-skills.flake = false;
+
+    # pplx-agent-tools — agent toolkit for Perplexity (web-session cookie
+    # auth, no API key). The flake ships a single `pplx` console script
+    # and a SKILL.md at $out/share/skills/pplx-agent-tools/. We re-export
+    # the package + register the skill via nix/registry.nix.
+    pplx-agent-tools.url = "github:ak2k/pplx-agent-tools";
+    pplx-agent-tools.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =
@@ -128,6 +135,7 @@
             krisp-cli = pkgs.python3.pkgs.callPackage ./krisp-cli { };
             gws = inputs.googleworkspace-cli.packages.${system}.default;
             msgvault = msgvaultPkg;
+            pplx-agent-tools = inputs.pplx-agent-tools.packages.${system}.default;
           };
 
           # Debug handle. Inspect with:
