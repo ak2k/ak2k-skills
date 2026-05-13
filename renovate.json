@@ -57,6 +57,14 @@
       "schedule": [
         "at any time"
       ]
+    },
+    {
+      "matchDepNames": [
+        "ak2k/pplx-agent-tools"
+      ],
+      "schedule": [
+        "at any time"
+      ]
     }
   ]
 }
