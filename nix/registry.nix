@@ -59,6 +59,10 @@ let
       source = "${sysPkgs.msgvault}/share/skills/msgvault-query";
       package = sysPkgs.msgvault;
     };
+    pplx-agent-tools = {
+      source = "${sysPkgs.pplx-agent-tools}/share/skills/pplx-agent-tools";
+      package = sysPkgs.pplx-agent-tools;
+    };
     # Docs-only skill: no binary in this flake. The source lives in the repo
     # tree directly — home-manager treats it the same as any other path.
     siplink = {

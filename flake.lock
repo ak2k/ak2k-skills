@@ -154,6 +154,79 @@
         "type": "github"
       }
     },
+    "pplx-agent-tools": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "pyproject-build-systems": "pyproject-build-systems",
+        "pyproject-nix": "pyproject-nix",
+        "uv2nix": "uv2nix"
+      },
+      "locked": {
+        "lastModified": 1778638537,
+        "narHash": "sha256-YEGDeeYE17t8DeiauvIn+FWyvxZ0qFCScGazwuDA/NM=",
+        "owner": "ak2k",
+        "repo": "pplx-agent-tools",
+        "rev": "a6be9245b837416d786c2de8b82976738e973ad7",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ak2k",
+        "repo": "pplx-agent-tools",
+        "type": "github"
+      }
+    },
+    "pyproject-build-systems": {
+      "inputs": {
+        "nixpkgs": [
+          "pplx-agent-tools",
+          "nixpkgs"
+        ],
+        "pyproject-nix": [
+          "pplx-agent-tools",
+          "pyproject-nix"
+        ],
+        "uv2nix": [
+          "pplx-agent-tools",
+          "uv2nix"
+        ]
+      },
+      "locked": {
+        "lastModified": 1776659114,
+        "narHash": "sha256-qapCOQmR++yZSY43dzrp3wCrkOTLpod+ONtJWBk6iKU=",
+        "owner": "pyproject-nix",
+        "repo": "build-system-pkgs",
+        "rev": "ffaa2161dd5d63e0e94591f86b54fc239660fb2e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pyproject-nix",
+        "repo": "build-system-pkgs",
+        "type": "github"
+      }
+    },
+    "pyproject-nix": {
+      "inputs": {
+        "nixpkgs": [
+          "pplx-agent-tools",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1776715674,
+        "narHash": "sha256-Gs1VnEkCkkRZxJQAC/Dhz0Jbfi22mFXChbtNg9w/Ybg=",
+        "owner": "pyproject-nix",
+        "repo": "pyproject.nix",
+        "rev": "69f57f27e52a87c54e28138a75ec741cd46663c9",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pyproject-nix",
+        "repo": "pyproject.nix",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "atlassian-mcp-skills": "atlassian-mcp-skills",
@@ -161,6 +234,7 @@
         "googleworkspace-cli": "googleworkspace-cli",
         "msgvault": "msgvault",
         "nixpkgs": "nixpkgs_3",
+        "pplx-agent-tools": "pplx-agent-tools",
         "treefmt-nix": "treefmt-nix"
       }
     },
@@ -196,6 +270,31 @@
       "original": {
         "owner": "numtide",
         "repo": "treefmt-nix",
+        "type": "github"
+      }
+    },
+    "uv2nix": {
+      "inputs": {
+        "nixpkgs": [
+          "pplx-agent-tools",
+          "nixpkgs"
+        ],
+        "pyproject-nix": [
+          "pplx-agent-tools",
+          "pyproject-nix"
+        ]
+      },
+      "locked": {
+        "lastModified": 1778320345,
+        "narHash": "sha256-HcdXw00vWUK/6Lnan6Sy21nfZb5664bSPAB6a/Dtsu8=",
+        "owner": "pyproject-nix",
+        "repo": "uv2nix",
+        "rev": "26e2f4debdf32960adf9c059dfadc14d7871ca79",
+        "type": "github"
+      },
+      "original": {
+        "owner": "pyproject-nix",
+        "repo": "uv2nix",
         "type": "github"
       }
     }
