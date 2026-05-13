@@ -164,15 +164,16 @@
         "uv2nix": "uv2nix"
       },
       "locked": {
-        "lastModified": 1778638537,
-        "narHash": "sha256-YEGDeeYE17t8DeiauvIn+FWyvxZ0qFCScGazwuDA/NM=",
+        "lastModified": 1778650439,
+        "narHash": "sha256-f8QaSWwRt1T8RsOX2DKNoMk83FiFQPCAzDxYrtOoNnw=",
         "owner": "ak2k",
         "repo": "pplx-agent-tools",
-        "rev": "a6be9245b837416d786c2de8b82976738e973ad7",
+        "rev": "dbb013a9a258cc4e9e67c472f9507e6c7708db4d",
         "type": "github"
       },
       "original": {
         "owner": "ak2k",
+        "ref": "v0.1.0",
         "repo": "pplx-agent-tools",
         "type": "github"
       }

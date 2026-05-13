@@ -42,7 +42,9 @@
     # auth, no API key). The flake ships a single `pplx` console script
     # and a SKILL.md at $out/share/skills/pplx-agent-tools/. We re-export
     # the package + register the skill via nix/registry.nix.
-    pplx-agent-tools.url = "github:ak2k/pplx-agent-tools";
+    # Pinned to a tag so Renovate's github-releases regex manager auto-bumps
+    # us on every new pplx-agent-tools release.
+    pplx-agent-tools.url = "github:ak2k/pplx-agent-tools/v0.1.0";
     pplx-agent-tools.inputs.nixpkgs.follows = "nixpkgs";
   };
 
