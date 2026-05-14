@@ -134,6 +134,7 @@
               atlassianMcpSkills = "${inputs.atlassian-mcp-skills}/skills";
             };
             claude-sessions = pkgs.python3.pkgs.callPackage ./claude-sessions { };
+            kagi = pkgs.python3.pkgs.callPackage ./kagi { };
             krisp-cli = pkgs.python3.pkgs.callPackage ./krisp-cli { };
             gws = inputs.googleworkspace-cli.packages.${system}.default;
             msgvault = msgvaultPkg;
@@ -191,6 +192,12 @@
               "claude-sessions" = {
                 extraPythonPackages = with pkgs.python3.pkgs; [
                   click
+                ];
+              };
+              "kagi" = {
+                extraPythonPackages = with pkgs.python3.pkgs; [
+                  beautifulsoup4
+                  types-beautifulsoup4
                 ];
               };
               "krisp-cli" = {

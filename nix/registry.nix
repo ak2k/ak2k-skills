@@ -51,6 +51,10 @@ let
       source = "${sysPkgs.claude-sessions}/share/skills/claude-sessions";
       package = sysPkgs.claude-sessions;
     };
+    kagi = {
+      source = "${sysPkgs.kagi}/share/skills/kagi";
+      package = sysPkgs.kagi;
+    };
     krisp-cli = {
       source = "${sysPkgs.krisp-cli}/share/skills/krisp-cli";
       package = sysPkgs.krisp-cli;
