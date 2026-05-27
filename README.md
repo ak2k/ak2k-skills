@@ -12,9 +12,12 @@ Structure and approach is inspired by [Mic92/mics-skills](https://github.com/Mic
 
 | Skill | Description |
 |-------|-------------|
+| [atlassian-cli](atlassian-cli/) | Query and update Atlassian Jira, Confluence, and Compass via Atlassian's official Remote MCP; bundles 5 official workflow skills under `workflows/` |
 | [claude-sessions](claude-sessions/) | List and search recent Claude Code sessions for resumption |
+| [kagi](kagi/) | Search the web or summarize a URL via Kagi — no API credits used (session-token auth) |
 | [krisp-cli](krisp-cli/) | Dynamic CLI for Krisp's MCP server — search meetings, action items, transcripts |
 | `msgvault-query` | SQL analytics over a msgvault email/chat archive. Binary + skill from [`wesm/msgvault`](https://github.com/wesm/msgvault). |
+| `pplx-agent-tools` | Query Perplexity via a Pro web session — `pplx search`, `pplx fetch --prompt`, `pplx snippets`. Binary + skill from [`ak2k/pplx-agent-tools`](https://github.com/ak2k/pplx-agent-tools). |
 | [siplink](skills/siplink/) | Place a phone call via VoIP.ms (binary from elsewhere) |
 
 ## Bundles
