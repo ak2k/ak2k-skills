@@ -1,0 +1,68 @@
+name: Update Nix packages
+
+# Auto-bump packages whose version + hashes live INSIDE a Nix expression
+# (cargoHash / vendorHash / fetchCrate hash) - Renovate cannot recompute those.
+# Renovate still handles flake.lock inputs and flake.nix version pins; this
+# workflow covers the gap. The two never overlap: Renovate's managers only match
+# flake.nix / flake.lock, never gemtts/default.nix.
+#
+# `nix-update` bumps to the latest upstream version AND refreshes both hashes in
+# one step, and we run `nix flake check` before opening the PR, so the PR is
+# correct-by-construction (not reliant on the PR's own CI, which a GITHUB_TOKEN-
+# opened PR does not trigger).
+
+on:
+  schedule:
+    - cron: '23 5 * * 1' # weekly, Monday 05:23 UTC (off-peak, off :00/:30)
+  workflow_dispatch:
+
+concurrency:
+  group: update-nix
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+
+      - uses: cachix/cachix-action@v17
+        with:
+          name: ak2k
+          authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+      # nix-update reads the latest version from the package's source (crates.io
+      # for fetchCrate) and rewrites version + src hash + cargoHash in place.
+      # Add further manual-hash packages as additional `--` invocations here.
+      - name: nix-update gemtts
+        run: nix run nixpkgs#nix-update -- --flake gemtts
+
+      - name: Verify (build + treefmt + all checks)
+        run: nix flake check -L
+
+      - name: Open PR with refreshed package
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: update-nix/packages
+          delete-branch: true
+          commit-message: 'chore(deps): nix-update manual-hash packages'
+          title: 'chore(deps): nix-update manual-hash packages'
+          body: |
+            Automated `nix-update` of packages whose version + hashes live inside
+            a Nix expression (Renovate cannot recompute those).
+
+            `nix flake check -L` passed in the workflow before this PR was opened,
+            so the change is verified. Note: because this PR is opened with the
+            default `GITHUB_TOKEN`, the `Check` workflow does not auto-run on it -
+            the in-job flake check above is the gate.

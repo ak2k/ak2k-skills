@@ -134,6 +134,7 @@
               atlassianMcpSkills = "${inputs.atlassian-mcp-skills}/skills";
             };
             claude-sessions = pkgs.python3.pkgs.callPackage ./claude-sessions { };
+            gemtts = pkgs.callPackage ./gemtts { };
             kagi = pkgs.python3.pkgs.callPackage ./kagi { };
             krisp-cli = pkgs.python3.pkgs.callPackage ./krisp-cli { };
             gws = inputs.googleworkspace-cli.packages.${system}.default;
