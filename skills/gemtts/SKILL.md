@@ -1,6 +1,6 @@
 ---
 name: gemtts
-description: Generate spoken audio with Google's Gemini text-to-speech. Use when the user asks to synthesize speech, create a voiceover or voicemail greeting, narrate text, make an audio clip from text, or pick a TTS voice. Produces WAV/MP3 from text with control over voice, style, pace, and accent.
+description: Generate speech audio from text with Google's Gemini TTS. Use when the user asks to synthesize speech, create a voiceover or voicemail greeting, or narrate text.
 ---
 
 # gemtts — Gemini text-to-speech CLI
