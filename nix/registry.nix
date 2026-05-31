@@ -51,6 +51,10 @@ let
       source = "${sysPkgs.claude-sessions}/share/skills/claude-sessions";
       package = sysPkgs.claude-sessions;
     };
+    gemtts = {
+      source = "${sysPkgs.gemtts}/share/skills/gemtts";
+      package = sysPkgs.gemtts;
+    };
     kagi = {
       source = "${sysPkgs.kagi}/share/skills/kagi";
       package = sysPkgs.kagi;
