@@ -24,7 +24,7 @@ rustPlatform.buildRustPackage (finalAttrs: {
     hash = "sha256-FC7JYYLZNTYhaIwFE9j3Izrl5dfIWomuVkbMXLTavuk=";
   };
 
-  cargoHash = "sha256-l5bxKL/zsX8h3Rmqf+inEY6/uM66Hns8oP9M42tLCBM=";
+  cargoHash = "sha256-0SlEBYFm4rBNes5LHiJSXJoBRucneQy9MQnao8EOCkQ=";
   cargoDepsName = finalAttrs.pname;
 
   # Integration tests use assert_cmd and reach the live Gemini TTS API.
