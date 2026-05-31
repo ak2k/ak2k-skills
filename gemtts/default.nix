@@ -5,14 +5,19 @@
 # Conventions verified current against 2026 nixos-unstable:
 #   - `hash` (SRI) on fetchCrate, plain `cargoHash` (useFetchCargoVendor is the
 #     transparent default since 25.05 - do not set it).
-#   - reqwest uses rustls-tls (ring backend) => no openssl/pkg-config, and no
-#     darwin.apple_sdk.frameworks (removed after the unified Apple SDK move).
+#   - reqwest uses rustls-tls (ring backend), BUT the `self_update` dep pulls in
+#     `openssl-sys` via native-tls (self-replace/zipsign-api), so we still need
+#     pkg-config + openssl. This builds on darwin via the SDK's OpenSSL but fails
+#     on Linux without them. No darwin.apple_sdk.frameworks (removed after the
+#     unified Apple SDK move).
 #   - `cargoDepsName = pname` keeps the vendor hash stable across version bumps
 #     so Renovate's nix-update postUpgrade only has to refresh `hash`.
 {
   lib,
   rustPlatform,
   fetchCrate,
+  pkg-config,
+  openssl,
 }:
 
 rustPlatform.buildRustPackage (finalAttrs: {
@@ -26,6 +31,11 @@ rustPlatform.buildRustPackage (finalAttrs: {
 
   cargoHash = "sha256-0SlEBYFm4rBNes5LHiJSXJoBRucneQy9MQnao8EOCkQ=";
   cargoDepsName = finalAttrs.pname;
+
+  # openssl-sys (pulled in transitively by self_update) needs pkg-config to
+  # locate openssl at build time.
+  nativeBuildInputs = [ pkg-config ];
+  buildInputs = [ openssl ];
 
   # Integration tests use assert_cmd and reach the live Gemini TTS API.
   doCheck = false;
