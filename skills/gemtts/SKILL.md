@@ -16,15 +16,17 @@ flags, exit codes, examples).
 ## Auth
 
 Reads the API key from `GEMINI_API_KEY` (or `GOOGLE_API_KEY` /
-`GOOGLE_AI_API_KEY`), else `~/.config/gemtts/config.toml`. On this machine the
-key lives in sops at `gemini_api_key`:
+`GOOGLE_AI_API_KEY`), else `~/.config/gemtts/config.toml`. The key is in
+Bitwarden (rbw) — export it, then invoke:
 
 ```bash
-export GEMINI_API_KEY=$(sops -d --extract '["gemini_api_key"]' \
-  ~/.config/nix/secrets/common.yaml)
-# or persist it once:  gemtts auth import-env   /   gemtts auth set
+export GEMINI_API_KEY=$(rbw get "aistudio.google.com API Key")
 gemtts doctor --live   # verify creds + a real round-trip before a batch
 ```
+
+This keeps the key in the env only (never written to disk), matching the
+rbw pattern the other skills use. `gemtts auth import-env` / `gemtts auth set`
+can persist it to `~/.config/gemtts/config.toml` if you prefer.
 
 ## Generate speech
 
