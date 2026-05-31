@@ -3,20 +3,8 @@ name: Check
 on:
   push:
     branches: [main]
-    paths:
-      - '**.nix'
-      - 'flake.lock'
-      - '.github/workflows/**'
-      - '**/pyproject.toml'
-      - '**/*.py'
   pull_request:
     branches: [main]
-    paths:
-      - '**.nix'
-      - 'flake.lock'
-      - '.github/workflows/**'
-      - '**/pyproject.toml'
-      - '**/*.py'
   workflow_dispatch:
 
 concurrency:
@@ -27,8 +15,35 @@ permissions:
   contents: read
 
 jobs:
+  # Decide whether the change touches anything `nix flake check` cares about.
+  # The `check (<os>)` matrix below always runs and always reports its status
+  # contexts (which branch protection requires), but only does the expensive
+  # build when code changed. Docs-only changes (e.g. README) report green
+  # without building. Without this gate the workflow was path-filtered, so it
+  # never reported the required contexts on docs-only PRs — leaving them
+  # permanently blocked from merging.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**.nix'
+              - 'flake.lock'
+              - '.github/workflows/**'
+              - '**/pyproject.toml'
+              - '**/*.py'
+
   check:
     name: check (${{ matrix.os }})
+    needs: changes
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -43,17 +58,25 @@ jobs:
           # in the 24h queue), and nixpkgs is sunsetting x86_64-darwin after
           # 25.11. macos-14 covers the live darwin target.
     steps:
+      - name: Docs-only change — nix flake check not required
+        if: needs.changes.outputs.code != 'true'
+        run: echo "No code files changed; skipping nix flake check for this context."
+
       - uses: actions/checkout@v6
+        if: needs.changes.outputs.code == 'true'
 
       - uses: cachix/install-nix-action@v31
+        if: needs.changes.outputs.code == 'true'
         with:
           extra_nix_config: |
             access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
 
       - uses: cachix/cachix-action@v17
+        if: needs.changes.outputs.code == 'true'
         with:
           name: ak2k
           authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
 
       - name: Flake check (builds + pushes all packages)
+        if: needs.changes.outputs.code == 'true'
         run: nix flake check -L
