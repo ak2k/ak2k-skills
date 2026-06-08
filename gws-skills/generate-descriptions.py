@@ -22,6 +22,13 @@ Usage:
 
 `<transformed-skills-dir>` is the output of `nix build .#gws-skills`
 (.../share/skills) so each service's nested `references/<verb>.md` are visible.
+
+NOTE: the committed overrides/gws-descriptions.json was authored with
+`--model opus` (slightly tighter, more natural). The default below is sonnet,
+which is cheaper but looser -- a plain regen overwrites the committed set with
+sonnet text. Pass `--model opus` to match committed quality, and use
+`--skip-existing` (or set `"locked": true` on an entry) to preserve any
+hand-tuned descriptions across regenerations.
 """
 
 from __future__ import annotations

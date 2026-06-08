@@ -99,7 +99,14 @@ def check_verb_coverage(skills: Path, overrides: dict) -> list[str]:
     by the override's verb_coverage map: each nested verb needs an entry whose
     claimed trigger phrase actually appears in the (applied) description. This
     validates the generator's self-report against the real text, so a missing
-    verb or a hand-edit that drops a trigger fails the build."""
+    verb or a hand-edit that drops a trigger fails the build.
+
+    Caveat: this proves only the convenience-HELPER verbs are present. It cannot
+    detect under-coverage of the broader API surface (e.g. a calendar
+    description that omits update/delete, which are methods but not helpers).
+    That gap is closed by the generator prompt (covers the full CRUD from each
+    SKILL.md method table) and by eyeballing against a holistic description --
+    not by this assertion. Don't read a green check as "complete"."""
     problems = []
     for parent in sorted(skills.glob("gws-*")):
         refs = parent / "references"
