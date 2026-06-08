@@ -8,6 +8,9 @@
   python3,
   gwsSkillsSrc,
 }:
+# transform.py nests verb-helpers and applies the authored description overrides
+# (overrides/gws-descriptions.json, produced by generate-descriptions.py), then
+# asserts no dead links and full verb coverage.
 runCommandLocal "gws-skills"
   {
     meta = {
@@ -19,5 +22,5 @@ runCommandLocal "gws-skills"
     mkdir -p "$out/share/skills"
     cp -r ${gwsSkillsSrc}/. "$out/share/skills/"
     chmod -R u+w "$out/share/skills"
-    ${python3}/bin/python3 ${./transform.py} "$out/share/skills"
+    ${python3}/bin/python3 ${./transform.py} "$out/share/skills" ${./overrides/gws-descriptions.json}
   ''
