@@ -43,7 +43,7 @@ jobs:
           # in the 24h queue), and nixpkgs is sunsetting x86_64-darwin after
           # 25.11. macos-14 covers the live darwin target.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: cachix/install-nix-action@v31
         with:
