@@ -24,12 +24,24 @@ kagi search -l "search query"
 # More links
 kagi search -l -n 10 "search query"
 
-# JSON output for parsing
-kagi search -j "search query" | jq '.results[0].url'
+# Plain text (strip markdown markup)
+kagi search --text "search query"
+
+# JSON for scripts (note: .results is empty unless you pass -l)
+kagi search -j -l "search query" | jq -r '.quick_answer.references[].url'
 
 # Shortcut form:
 kagi-search "search query"
 ```
+
+**Reading vs scripting.** The default (no `-j`) output *is* a synthesized,
+cited answer — Kagi's Quick Answer plus a References list of source URLs. Use
+bare `kagi search` whenever you're *reading* the result: it's already clean
+markdown and uses fewer tokens than JSON. Don't reach for `-j` just because
+you're an agent — JSON only pays off when a *script* parses fields. For that
+case use `-j` (add `-l -n 10` to populate `.results` with raw candidate
+links); the JSON shape is `{results, quick_answer: {markdown, references:
+[{title, url, contribution}]}}`.
 
 ## Summarize
 
