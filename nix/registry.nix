@@ -76,6 +76,11 @@ let
     siplink = {
       source = ../skills/siplink;
     };
+    # Docs-only: the cloak-browser CLI it documents ships from nix-config
+    # (scripts/cloak-browser), not this flake.
+    stealth-browse = {
+      source = ../skills/stealth-browse;
+    };
   };
 in
 ownEntries // gwsEntries
