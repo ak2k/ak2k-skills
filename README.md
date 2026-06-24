@@ -20,6 +20,7 @@ Structure and approach is inspired by [Mic92/mics-skills](https://github.com/Mic
 | `msgvault-query` | SQL analytics over a msgvault email/chat archive. Binary + skill from [`wesm/msgvault`](https://github.com/wesm/msgvault). |
 | `pplx-agent-tools` | Query Perplexity via a Pro web session — `pplx search`, `pplx fetch --prompt`, `pplx snippets`. Binary + skill from [`ak2k/pplx-agent-tools`](https://github.com/ak2k/pplx-agent-tools). |
 | [siplink](skills/siplink/) | Place a phone call via VoIP.ms (binary from elsewhere) |
+| [stealth-browse](skills/stealth-browse/) | Drive a browser through anti-bot walls via the `cloak-browser` CLI (agent-browser + CloakBrowser stealth Chromium). CLI ships from nix-config; docs-only here. |
 
 ## Bundles
 
