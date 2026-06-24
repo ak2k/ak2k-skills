@@ -165,7 +165,7 @@
       },
       "locked": {
         "lastModified": 1782251960,
-        "narHash": "sha256-S5F1GGphaFK/fjOUyVq6mhnvjsFOR8EpFDS+O86VMEY=",
+        "narHash": "sha256-SBe7Ny+46VgDTaqAJAzSqTJU1DfBCfXtxyiEfsv337E=",
         "owner": "ak2k",
         "repo": "pplx-agent-tools",
         "rev": "cad6bec7b1ebd204af90d37cf25bfcdb15994e5b",
