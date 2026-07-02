@@ -18,6 +18,7 @@ Structure and approach is inspired by [Mic92/mics-skills](https://github.com/Mic
 | [kagi](kagi/) | Search the web or summarize a URL via Kagi — no API credits used (session-token auth) |
 | [krisp-cli](krisp-cli/) | Dynamic CLI for Krisp's MCP server — search meetings, action items, transcripts |
 | `msgvault-query` | SQL analytics over a msgvault email/chat archive. Binary + skill from [`wesm/msgvault`](https://github.com/wesm/msgvault). |
+| `officecli` | Create/edit `.docx`/`.xlsx`/`.pptx` from the CLI. Binary from [`numtide/llm-agents.nix`](https://github.com/numtide/llm-agents.nix) ([`iOfficeAI/OfficeCLI`](https://github.com/iOfficeAI/OfficeCLI)); umbrella SKILL.md extracted from the binary at build time, specialized skills (pitch-deck, financial-model, morph-ppt, ...) load at runtime via `officecli load_skill`. |
 | `pplx-agent-tools` | Query Perplexity via a Pro web session — `pplx search`, `pplx fetch --prompt`, `pplx snippets`. Binary + skill from [`ak2k/pplx-agent-tools`](https://github.com/ak2k/pplx-agent-tools). |
 | [siplink](skills/siplink/) | Place a phone call via VoIP.ms (binary from elsewhere) |
 | [stealth-browse](skills/stealth-browse/) | Drive a browser through anti-bot walls via the `cloak-browser` CLI (agent-browser + CloakBrowser stealth Chromium). CLI ships from nix-config; docs-only here. |

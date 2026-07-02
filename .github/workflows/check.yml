@@ -49,6 +49,11 @@ jobs:
         with:
           extra_nix_config: |
             access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+            # officecli is a .NET self-contained build re-exported from
+            # llm-agents.nix — pull it from numtide's cache instead of
+            # building dotnet from source on every CI run.
+            extra-substituters = https://cache.numtide.com
+            extra-trusted-public-keys = niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g=
 
       - uses: cachix/cachix-action@v17
         with:

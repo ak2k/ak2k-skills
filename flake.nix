@@ -46,6 +46,14 @@
     # us on every new pplx-agent-tools release.
     pplx-agent-tools.url = "github:ak2k/pplx-agent-tools/v0.4.0";
     pplx-agent-tools.inputs.nixpkgs.follows = "nixpkgs";
+
+    # llm-agents.nix — source of the officecli package (iOfficeAI/OfficeCLI,
+    # a .NET CLI for .docx/.xlsx/.pptx). Deliberately NO nixpkgs.follows:
+    # llm-agents builds against its own locked nixpkgs and publishes to
+    # cache.numtide.com — a follows would fork our derivations off that
+    # cache and force local .NET rebuilds. Unpinned (tracks main); Renovate
+    # lock-file maintenance bumps it weekly.
+    llm-agents.url = "github:numtide/llm-agents.nix";
   };
 
   outputs =
@@ -113,6 +121,54 @@
           # derivation name (upstream's flake.nix at tag v0.14.0 still carries
           # a stale `version = "0.13.1"` literal), (c) ship the Claude Code
           # skill under $out/share/skills/msgvault-query/ for the registry.
+          # officecli's agent skills ship EMBEDDED in the .NET binary (upstream
+          # CI keeps them byte-identical to the repo copies), and `officecli
+          # skills claude` is pure local extraction — no network. Extracting at
+          # build time guarantees the installed SKILL.md always matches the
+          # installed binary. Only the umbrella skill is registered: its body
+          # routes to the 10 specialized skills (pptx / word / excel /
+          # pitch-deck / financial-model / morph-ppt / ...) via `officecli
+          # load_skill <name>` at runtime, so one ~55-token description buys
+          # the whole catalogue without 10 more always-on frontmatters (same
+          # idle-context reasoning as the atlassian-cli workflow nesting).
+          officecliSkill =
+            pkgs.runCommand "officecli-skill"
+              {
+                nativeBuildInputs = [ inputs.llm-agents.packages.${system}.officecli ];
+              }
+              ''
+                export HOME=$(mktemp -d)
+                officecli skills claude
+                src=$HOME/.claude/skills/officecli/SKILL.md
+
+                # Drop the "## Install" section — a curl|bash bootstrap that is
+                # wrong on Nix-managed hosts (the registry wires the binary
+                # onto PATH). Deletes the heading through its closing "---".
+                awk '
+                  /^## Install$/ { skip=1; next }
+                  skip && /^---$/ { skip=0; next }
+                  !skip { print }
+                ' "$src" > SKILL.md
+
+                # Guard the patch against upstream restructuring: the section
+                # must have existed, the curl URL must be gone, and the
+                # load_skill routing table must still be present.
+                grep -q '^## Install$' "$src" || {
+                  echo "ERROR: '## Install' heading missing upstream; re-check the awk patch"
+                  exit 1
+                }
+                if grep -q 'd\.officecli\.ai' SKILL.md; then
+                  echo "ERROR: curl-install instructions survived the patch"
+                  exit 1
+                fi
+                if ! grep -q '^## Specialized Skills$' SKILL.md; then
+                  echo "ERROR: load_skill routing section missing from extracted SKILL.md"
+                  exit 1
+                fi
+
+                install -Dm444 SKILL.md $out/share/skills/officecli/SKILL.md
+              '';
+
           msgvaultPkg = inputs.msgvault.packages.${system}.default.overrideAttrs (old: {
             # We're intentionally replacing upstream's stale `version = "0.13.1"`
             # with the real tag; silence nixpkgs's warning about version bumps.
@@ -139,6 +195,11 @@
             krisp-cli = pkgs.python3.pkgs.callPackage ./krisp-cli { };
             gws = inputs.googleworkspace-cli.packages.${system}.default;
             msgvault = msgvaultPkg;
+            # Pure re-export — never overrideAttrs this one: any change forks
+            # the derivation off cache.numtide.com and forces a local .NET
+            # rebuild. The skill lives in the separate officecli-skill output.
+            officecli = inputs.llm-agents.packages.${system}.officecli;
+            officecli-skill = officecliSkill;
             pplx-agent-tools = inputs.pplx-agent-tools.packages.${system}.default;
           };
 

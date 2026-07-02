@@ -67,6 +67,16 @@ let
       source = "${sysPkgs.msgvault}/share/skills/msgvault-query";
       package = sysPkgs.msgvault;
     };
+    # Umbrella skill only — its body routes to the 10 specialized skills
+    # (pptx, word, excel, pitch-deck, financial-model, morph-ppt, ...) via
+    # `officecli load_skill <name>` at runtime, keeping the idle-context
+    # cost to one description (same reasoning as atlassian-cli's workflow
+    # nesting above). SKILL.md is extracted from the binary at build time
+    # (see officecliSkill in flake.nix), so it can't drift from the CLI.
+    officecli = {
+      source = "${sysPkgs.officecli-skill}/share/skills/officecli";
+      package = sysPkgs.officecli;
+    };
     pplx-agent-tools = {
       source = "${sysPkgs.pplx-agent-tools}/share/skills/pplx-agent-tools";
       package = sysPkgs.pplx-agent-tools;
