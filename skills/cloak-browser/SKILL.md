@@ -1,9 +1,9 @@
 ---
-name: stealth-browse
-description: Drive a browser through anti-bot / bot-detection walls (Cloudflare Turnstile, fingerprinting, sannysoft-class checks) via the cloak-browser CLI — agent-browser driving CloakBrowser's source-patched stealth Chromium. Use when a fetch or plain agent-browser is blocked, challenged, or served a bot wall on an anonymous (not logged-in) site. Not for authenticated sessions.
+name: cloak-browser
+description: Stealth browsing — an agentic, anti-detect browser. Drive through anti-bot / bot-detection walls (Cloudflare Turnstile, fingerprinting, sannysoft-class checks) via the cloak-browser CLI (agent-browser + CloakBrowser's source-patched stealth Chromium). Use when the user asks for "stealth" browsing, or when a fetch or plain agent-browser is blocked, challenged, or bot-walled on an anonymous (not logged-in) site. Not for authenticated sessions.
 ---
 
-# stealth-browse
+# cloak-browser
 
 `cloak-browser` is a drop-in stealth front-end to `agent-browser`: identical CLI
 and verbs, but it drives CloakBrowser's source-patched Chromium, whose
@@ -12,7 +12,9 @@ real Chrome UA not HeadlessChrome, spoofed GPU / cores / memory). Because the
 stealth lives in the binary, it survives agent-browser driving over CDP.
 Verified 56/56 on bot.sannysoft.com (vs 52/56 for plain agent-browser).
 
-Use it exactly like `agent-browser` — every argument is forwarded:
+Use it exactly like `agent-browser` — every argument is forwarded. See the
+`agent-browser` skill (or `agent-browser skills get core --full`) for the full
+verb / session reference:
 
 ```bash
 cloak-browser --session s open https://target.example
@@ -53,6 +55,8 @@ CLOAK_SEED=42424 CLOAK_QUOTA=5000 cloak-browser --profile ./acct --session s ope
   browser — pass `--proxy` when datacenter IPs get reputation-blocked.
 - This is fingerprint stealth, not behavioral: CloakBrowser's `humanize`
   (mouse/keyboard timing) is not available when driving via agent-browser.
+- Don't share a `--session` name with plain `agent-browser` — the first to
+  launch the daemon wins, so the other silently reuses its browser.
 - macOS presents a native-Mac fingerprint; Linux presents a Windows profile.
-- The `cloak-browser` CLI ships from nix-config (`scripts/cloak-browser`); this
-  skill is documentation only.
+- The `cloak-browser` CLI ships from nix-config (`scripts/cloak-browser.py`);
+  this skill is documentation only.

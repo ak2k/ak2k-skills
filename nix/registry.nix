@@ -86,10 +86,14 @@ let
     siplink = {
       source = ../skills/siplink;
     };
-    # Docs-only: the cloak-browser CLI it documents ships from nix-config
-    # (scripts/cloak-browser), not this flake.
-    stealth-browse = {
-      source = ../skills/stealth-browse;
+    # Docs-only: the CLIs these document ship from nix-config, not this flake.
+    # cloak-browser = the stealth wrapper (scripts/cloak-browser.py);
+    # agent-browser = general/authed browser automation (llm-agents binary).
+    cloak-browser = {
+      source = ../skills/cloak-browser;
+    };
+    agent-browser = {
+      source = ../skills/agent-browser;
     };
   };
 in

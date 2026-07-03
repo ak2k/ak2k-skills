@@ -21,7 +21,8 @@ Structure and approach is inspired by [Mic92/mics-skills](https://github.com/Mic
 | `officecli` | Create/edit `.docx`/`.xlsx`/`.pptx` from the CLI. Binary from [`numtide/llm-agents.nix`](https://github.com/numtide/llm-agents.nix) ([`iOfficeAI/OfficeCLI`](https://github.com/iOfficeAI/OfficeCLI)); umbrella SKILL.md extracted from the binary at build time, specialized skills (pitch-deck, financial-model, morph-ppt, ...) load at runtime via `officecli load_skill`. |
 | `pplx-agent-tools` | Query Perplexity via a Pro web session — `pplx search`, `pplx fetch --prompt`, `pplx snippets`. Binary + skill from [`ak2k/pplx-agent-tools`](https://github.com/ak2k/pplx-agent-tools). |
 | [siplink](skills/siplink/) | Place a phone call via VoIP.ms (binary from elsewhere) |
-| [stealth-browse](skills/stealth-browse/) | Drive a browser through anti-bot walls via the `cloak-browser` CLI (agent-browser + CloakBrowser stealth Chromium). CLI ships from nix-config; docs-only here. |
+| [agent-browser](skills/agent-browser/) | General browser automation — drive Chrome/Chromium over CDP; authenticated sites via cookie injection. Router; points at `agent-browser skills get core --full`. Docs-only (binary from nix-config). |
+| [cloak-browser](skills/cloak-browser/) | Stealth browsing through anti-bot walls via the `cloak-browser` CLI (agent-browser + CloakBrowser stealth Chromium). CLI ships from nix-config; docs-only. |
 
 ## Bundles
 
