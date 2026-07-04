@@ -54,6 +54,14 @@
     # cache and force local .NET rebuilds. Unpinned (tracks main); Renovate
     # lock-file maintenance bumps it weekly.
     llm-agents.url = "github:numtide/llm-agents.nix";
+
+    # surefetch — verified web-access ladder (fetch/search/crawl/map/extract). Its own flake
+    # exposes `packages.<system>.default` = the `surefetch` CLI (a uv2nix runtime venv). We
+    # register it as a bundled CLI+skill: the binary lands on PATH and the SKILL.md ships from
+    # this repo's `skills/surefetch/`. Private repo — resolved via the same GitHub token nix
+    # uses for the other ak2k inputs. NOT `follows`-pinned to our nixpkgs: surefetch's uv2nix
+    # closure pins its own, and overriding it risks the C-extension build.
+    surefetch.url = "github:ak2k/surefetch";
   };
 
   outputs =
