@@ -95,6 +95,11 @@ let
     agent-browser = {
       source = ../skills/agent-browser;
     };
+    # surefetch: CLI binary from its own flake input; SKILL.md from this repo's tree.
+    surefetch = {
+      source = ../skills/surefetch;
+      package = inputs.surefetch.packages.${system}.default;
+    };
   };
 in
 ownEntries // gwsEntries
