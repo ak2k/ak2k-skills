@@ -96,9 +96,12 @@ let
       source = ../skills/agent-browser;
     };
     # surefetch: CLI binary from its own flake input; SKILL.md from this repo's tree.
+    # `.browser` = the full ladder (core + the [browser] extra: camoufox render engine
+    # + in-process adblock). The camoufox rung auto-joins the default ladder and
+    # self-provisions its binary/filters on first walled fetch — no manual bootstrap.
     surefetch = {
       source = ../skills/surefetch;
-      package = inputs.surefetch.packages.${system}.default;
+      package = inputs.surefetch.packages.${system}.browser;
     };
   };
 in
