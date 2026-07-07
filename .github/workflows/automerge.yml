@@ -1,0 +1,148 @@
+name: Merge Eligible PRs
+
+on:
+  workflow_run:
+    workflows: ["Check"]
+    types: [completed]
+  pull_request_target:
+    branches: [main]
+    types: [labeled]
+  workflow_dispatch:
+
+concurrency:
+  group: automerge
+  cancel-in-progress: false
+
+permissions:
+  checks: read
+  contents: write
+  pull-requests: write
+
+jobs:
+  merge:
+    # github-script only (no checkout, no nix), so it runs no untrusted code.
+    # Runs on the GitHub-hosted pool like the rest of this repo's CI.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const requiredChecks = [
+              "check (ubuntu-latest)",
+              "check (ubuntu-24.04-arm)",
+              "check (macos-14)",
+            ];
+            const automergeLabel = "automerge";
+
+            const candidates =
+              context.eventName === "workflow_run"
+                ? (() => {
+                    const run = context.payload.workflow_run;
+                    if (run.event !== "pull_request" || run.conclusion !== "success") return [];
+                    return (run.pull_requests || []).map((pr) => ({
+                      number: pr.number,
+                      expectedSha: run.head_sha,
+                    }));
+                  })()
+                : context.eventName === "pull_request_target"
+                  ? [{
+                      number: context.payload.pull_request.number,
+                      expectedSha: context.payload.pull_request.head.sha,
+                    }]
+                  : (await github.paginate(github.rest.pulls.list, {
+                      owner,
+                      repo,
+                      state: "open",
+                      base: "main",
+                      per_page: 100,
+                    })).map((pr) => ({ number: pr.number }));
+
+            for (const candidate of candidates) {
+              const { data: pr } = await github.rest.pulls.get({
+                owner,
+                repo,
+                pull_number: candidate.number,
+              });
+              const labels = pr.labels.map((label) => label.name);
+              const isRenovate = pr.head.ref.startsWith("renovate/");
+              // ak2k is the only human committer; agents (Claude Code, codex,
+              // etc) push under the same identity. Non-draft signals "ready
+              // to merge". This makes the manual `gh pr edit --add-label
+              // automerge` dance unnecessary for first-party work while
+              // keeping the supply-chain-blocked-input carve-out below in
+              // effect. Bot accounts (Renovate, Dependabot) authored under
+              // their own identity skip this branch — Renovate has its own
+              // merge path via the `renovate/*` prefix above.
+              const isAuthoredByOwner = pr.user.login === "ak2k";
+              const isEligible = isRenovate || labels.includes(automergeLabel) || isAuthoredByOwner;
+
+              if (!isEligible || pr.state !== "open" || pr.draft || pr.base.ref !== "main") continue;
+              if (candidate.expectedSha && pr.head.sha !== candidate.expectedSha) continue;
+              if (pr.mergeable === false || ["behind", "blocked", "dirty", "draft"].includes(pr.mergeable_state)) continue;
+
+              const { data } = await github.rest.checks.listForRef({
+                owner,
+                repo,
+                ref: pr.head.sha,
+                per_page: 100,
+              });
+              const checks = new Map(
+                data.check_runs
+                  .filter((run) => run.app?.slug === "github-actions")
+                  .map((run) => [run.name, run])
+              );
+              if (!requiredChecks.every((name) => checks.get(name)?.conclusion === "success")) continue;
+
+              // Carve-out: block automerge for flake.lock changes that touch
+              // supply-chain-sensitive inputs. llm-agents ships cli-proxy-api,
+              // which stores Codex OAuth refresh tokens in cleartext on disk —
+              // a malicious upstream commit reaches token-exfil one deploy
+              // later. Catches both per-input PRs and lockFileMaintenance
+              // bundles that silently bump llm-agents along with everything
+              // else. Mirrors the human-review intent of the renovate.json
+              // packageRule (which only gates Renovate's own --automerge flag,
+              // not this direct-merge workflow).
+              const blockedInputs = ["llm-agents"];
+              const fetchLock = (ref) =>
+                github.rest.repos.getContent({ owner, repo, path: "flake.lock", ref })
+                  .then((r) => JSON.parse(Buffer.from(r.data.content, "base64").toString()))
+                  .catch(() => null);
+              // Compare the head flake.lock against the MERGE BASE, not
+              // pr.base.ref (main's moving tip). An automated lock update
+              // landing on main after the PR branched otherwise makes the PR's
+              // older lockfile differ from main's on llm-agents even though the
+              // PR never touched flake.lock — a false-positive block.
+              const { data: cmp } = await github.rest.repos.compareCommitsWithBasehead({
+                owner,
+                repo,
+                basehead: `${pr.base.ref}...${pr.head.sha}`,
+              });
+              const [headLock, baseLock] = await Promise.all([
+                fetchLock(pr.head.sha),
+                fetchLock(cmp.merge_base_commit.sha),
+              ]);
+              if (headLock && baseLock) {
+                const touched = blockedInputs.filter(
+                  (name) => headLock.nodes?.[name]?.locked?.rev !== baseLock.nodes?.[name]?.locked?.rev
+                );
+                if (touched.length > 0) {
+                  core.info(`#${pr.number}: blocked — flake.lock touches ${touched.join(", ")}`);
+                  continue;
+                }
+              }
+
+              try {
+                await github.rest.pulls.merge({
+                  owner,
+                  repo,
+                  pull_number: pr.number,
+                  sha: pr.head.sha,
+                  merge_method: (isRenovate || isAuthoredByOwner) ? "squash" : "merge",
+                });
+                core.info(`#${pr.number}: merged`);
+              } catch (error) {
+                core.warning(`#${pr.number}: merge failed: ${error.message}`);
+              }
+            }
