@@ -1,7 +1,8 @@
 """Tests for `kagi search` output shaping: the -j JSON contract and --text.
 
 Network is mocked, so these exercise run()'s rendering paths without hitting
-Kagi. The JSON-shape test is a regression guard for the `raw_text` removal.
+Kagi. The JSON-shape test is a regression guard for the backward-compatible
+`raw_text` alias in the `-j` output.
 """
 
 import argparse
@@ -47,13 +48,14 @@ def _mocked_run(fmt: str):
 
 
 class JsonContract(unittest.TestCase):
-    def test_quick_answer_shape_has_no_raw_text(self) -> None:
+    def test_quick_answer_shape_keeps_raw_text_alias(self) -> None:
         with _mocked_run("json") as (rc, out):
             self.assertEqual(rc, 0)
             payload = json.loads(out)
         qa = payload["quick_answer"]
-        self.assertEqual(set(qa), {"markdown", "references"})
-        self.assertNotIn("raw_text", qa)
+        self.assertEqual(set(qa), {"markdown", "raw_text", "references"})
+        # Backward-compat: raw_text is kept as an alias of markdown.
+        self.assertEqual(qa["raw_text"], qa["markdown"])
 
 
 class TextFlag(unittest.TestCase):

@@ -345,6 +345,10 @@ def run(args: argparse.Namespace) -> int:
         if qa:
             out["quick_answer"] = {
                 "markdown": qa.markdown,
+                # Backward-compat: released `kagi-search -j` emitted `raw_text`
+                # (identical to `markdown`). Kept as an alias so existing
+                # consumers of `.quick_answer.raw_text` don't break.
+                "raw_text": qa.markdown,
                 "references": qa.references,
             }
         print(json.dumps(out, indent=2))
