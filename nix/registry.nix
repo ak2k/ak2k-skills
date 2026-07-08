@@ -99,9 +99,20 @@ let
     # `.browser` = the full ladder (core + the [browser] extra: camoufox render engine
     # + in-process adblock). The camoufox rung auto-joins the default ladder and
     # self-provisions its binary/filters on first walled fetch — no manual bootstrap.
+    # Expose ONLY bin/surefetch: the `.browser` output is a full venv whose bin/python3
+    # would collide with pplx-agent-tools' python3 in the merged home-manager profile.
+    # The surefetch script's shebang references the venv's python by absolute path (and it
+    # spawns camoufox via the Python API, not a PATH binary), so it still resolves its deps.
     surefetch = {
       source = ../skills/surefetch;
-      package = inputs.surefetch.packages.${system}.browser;
+      package =
+        let
+          pkgs = inputs.nixpkgs.legacyPackages.${system};
+        in
+        pkgs.runCommand "surefetch-cli" { } ''
+          mkdir -p $out/bin
+          ln -s ${inputs.surefetch.packages.${system}.browser}/bin/surefetch $out/bin/surefetch
+        '';
     };
   };
 in
