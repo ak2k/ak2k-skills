@@ -60,7 +60,7 @@ kagi summarize --takeaway https://example.com/article
 kagi summarize --text https://example.com/article
 
 # Raw JSON
-kagi summarize --json https://example.com/article
+kagi summarize -j https://example.com/article
 
 # Target language
 kagi summarize --language ES https://example.com/article
@@ -68,3 +68,6 @@ kagi summarize --language ES https://example.com/article
 # Alias form:
 kagi-summarize https://example.com/article
 ```
+
+Both verbs share the same output flags: `-j`/`--json`, `--text`, `--markdown`
+(default).

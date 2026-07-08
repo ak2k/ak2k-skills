@@ -93,6 +93,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     )
     fmt = parser.add_mutually_exclusive_group()
     fmt.add_argument(
+        "-j",
         "--json",
         action="store_const",
         const="json",
