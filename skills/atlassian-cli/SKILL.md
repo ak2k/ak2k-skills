@@ -47,10 +47,11 @@ atlassian-cli call getTransitionsForJiraIssue '{"cloudId": "<cloudId>", "issueId
 atlassian-cli call transitionJiraIssue '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123", "transition": {"id": "31"}}'
 
 # Jira: assignee resolution (turns email/displayName into accountId for createJiraIssue/editJiraIssue)
-atlassian-cli call lookupJiraAccountId '{"cloudId": "<cloudId>", "query": "user@example.com"}'
+atlassian-cli call lookupJiraAccountId '{"cloudId": "<cloudId>", "searchString": "user@example.com"}'
 
-# Jira: worklog
-atlassian-cli call addWorklogToJiraIssue '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123", "timeSpent": "2h", "comment": "..."}'
+# Jira: worklog (the comment field is commentBody, not comment)
+atlassian-cli call addWorklogToJiraIssue \
+  '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123", "timeSpent": "2h", "commentBody": "...", "contentFormat": "markdown"}'
 
 # Jira: issue links (e.g., "blocks" / "is blocked by")
 atlassian-cli call getIssueLinkTypes '{"cloudId": "<cloudId>"}'
@@ -70,17 +71,20 @@ atlassian-cli call searchConfluenceUsingCql \
 atlassian-cli call getConfluenceSpaces '{"cloudId": "<cloudId>"}'
 atlassian-cli call getPagesInConfluenceSpace '{"cloudId": "<cloudId>", "spaceId": "..."}'
 atlassian-cli call getConfluencePage '{"cloudId": "<cloudId>", "pageId": "12345"}'
+# `body` is a plain STRING (not {representation, value}); pair it with contentFormat
 atlassian-cli call createConfluencePage \
-  '{"cloudId": "<cloudId>", "spaceId": "...", "title": "...", "body": {"representation": "storage", "value": "<p>...</p>"}}'
+  '{"cloudId": "<cloudId>", "spaceId": "...", "title": "...", "body": "<p>...</p>", "contentFormat": "html"}'
+# no version param — the server bumps it; use versionMessage to label the revision
 atlassian-cli call updateConfluencePage \
-  '{"cloudId": "<cloudId>", "pageId": "12345", "title": "...", "body": {"representation": "storage", "value": "<p>...</p>"}, "version": {"number": 2}}'
+  '{"cloudId": "<cloudId>", "pageId": "12345", "title": "...", "body": "<p>...</p>", "contentFormat": "html", "versionMessage": "..."}'
 
 # Confluence: comments (footer = page-level, inline = anchored to text)
 atlassian-cli call getConfluencePageFooterComments '{"cloudId": "<cloudId>", "pageId": "12345"}'
-atlassian-cli call createConfluenceFooterComment '{"cloudId": "<cloudId>", "pageId": "12345", "body": {"representation": "storage", "value": "..."}}'
+atlassian-cli call createConfluenceFooterComment \
+  '{"cloudId": "<cloudId>", "pageId": "12345", "body": "...", "contentFormat": "markdown"}'
 
-# ARI (Atlassian Resource Identifier) lookup — when an ID is in ARI form, use this
-atlassian-cli call fetch '{"ari": "ari:cloud:jira:..."}'
+# ARI (Atlassian Resource Identifier) lookup — the param is `id`, not `ari`
+atlassian-cli call fetch '{"id": "ari:cloud:jira:..."}'
 
 # Check auth status
 atlassian-cli status
@@ -116,7 +120,7 @@ steps.
 
 # Notes
 
-- **Tool discovery is dynamic** — `atlassian-cli tools` is the source of truth. Atlassian's Remote MCP currently exposes ~33 tools; if the user's site has a different scope grant (e.g. no Compass), the list may differ.
+- **Tool discovery is dynamic** — `atlassian-cli tools` is the source of truth. Atlassian's Remote MCP exposes ~31 tools; if the user's site has a different scope grant (e.g. no Compass), the list may differ. On a Jira+Confluence-only grant there are **no Compass tools at all**, so don't route Compass questions here without checking `tools` first.
 - **Most tools require `cloudId`** — the unique site identifier. Get it once with `atlassian-cli call getAccessibleAtlassianResources '{}'` and reuse it for the rest of the session. The site hostname (e.g. `kanerai.atlassian.net`) often works in place of the UUID.
 - **Default search is `search` (Rovo)**, not CQL/JQL — only fall back to `searchJiraIssuesUsingJql` / `searchConfluenceUsingCql` when the user provides an explicit query expression.
 - **No destructive operations exposed.** The MCP intentionally omits `deleteJiraIssue` / `deletePage` / `archive*` etc. — Atlassian's design choice for safety. If the user needs deletion, route them to the Atlassian web UI or use the REST API directly.
