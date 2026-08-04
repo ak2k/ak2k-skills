@@ -29,7 +29,13 @@ atlassian-cli call createJiraIssue '{"cloudId": "<cloudId>", "projectKey": "PROJ
 atlassian-cli call addCommentToJiraIssue \
   '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123", "commentBody": "...", "contentFormat": "markdown"}'
 
-# Jira: rich comment (tables/panels) — ADF must be JSON-STRINGIFIED into commentBody
+# Jira: a markdown pipe table becomes a REAL Jira table — no ADF needed
+atlassian-cli call addCommentToJiraIssue \
+  '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123", "contentFormat": "markdown",
+    "commentBody": "| Range | Count |\n| --- | --- |\n| 2024-05 | 120 |"}'
+
+# Jira: ADF for nodes markdown cannot spell (panels, status, mentions).
+# Must be JSON-STRINGIFIED into commentBody
 atlassian-cli call addCommentToJiraIssue \
   '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123", "contentFormat": "adf",
     "commentBody": "{\"type\":\"doc\",\"version\":1,\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}]}"}'
@@ -125,7 +131,7 @@ steps.
 These fail silently or produce surprising output rather than erroring loudly — call them out before invoking.
 
 - **`contentFormat` decides how bodies are parsed — always pass it explicitly.** Every body-bearing tool (`addCommentToJiraIssue`, `createJiraIssue`, `editJiraIssue`, `addWorklogToJiraIssue`, `createIssueLink`, and the Confluence page/comment tools) takes a sibling `contentFormat` enum, and the schema warns "Defaults vary by tool when omitted."
-  - Jira: `["markdown", "adf"]`, **markdown is the default**. Markdown gives you bold/headings/lists/code fences; use `"adf"` for tables, panels, mentions, and status lozenges.
+  - Jira: `["markdown", "adf"]`, **markdown is the default**. Markdown is more capable than it looks — verified converting to real ADF nodes: bold, code fences, nested lists, **and pipe tables** (`| a | b |` becomes a genuine `table`/`tableRow`/`tableCell` tree, not literal text). A `- one<br>- two` cell even yields a `bulletList` nested inside the `tableCell`. Reach for `"adf"` when you need nodes with no markdown spelling — panels, status lozenges, mentions, media — or when you want exact structural control.
   - Confluence: `["html", "markdown", "adf"]`. `"html"` is the ergonomic choice — it is round-trip safe, preserves inline comments and local IDs, and supports `<table>/<thead>/<tr>/<th>/<td>` plus Confluence HTML+ nodes via `data-type` attributes (panels, expands, task lists, layouts). Never use storage XML (`<ac:structured-macro>`).
   - **The silent-failure trap:** passing an ADF document *without* `contentFormat: "adf"` sends it through the Markdown converter, and the raw `{"type": "doc", ...}` is stored as literal visible text. The tell is markdown escaping the JSON's brackets (`\[`).
 - **`commentBody` is string-only; `description` is not.** `addCommentToJiraIssue.commentBody` is typed `string`, so an ADF document must be **JSON-stringified** (a bare object is rejected with `-32602 expected string, received object`). `createJiraIssue.description` is `anyOf: [string, {type: "doc"}]` and accepts either a stringified ADF doc or a bare object. Don't assume one shape works everywhere.
