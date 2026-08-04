@@ -26,7 +26,17 @@ atlassian-cli call searchJiraIssuesUsingJql \
 atlassian-cli call getJiraIssue '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123"}'
 atlassian-cli call editJiraIssue '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123", "fields": {"summary": "..."}}'
 atlassian-cli call createJiraIssue '{"cloudId": "<cloudId>", "projectKey": "PROJ", "issueTypeName": "Task", "summary": "..."}'
-atlassian-cli call addCommentToJiraIssue '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123", "commentBody": "..."}'
+atlassian-cli call addCommentToJiraIssue \
+  '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123", "commentBody": "...", "contentFormat": "markdown"}'
+
+# Jira: rich comment (tables/panels) — ADF must be JSON-STRINGIFIED into commentBody
+atlassian-cli call addCommentToJiraIssue \
+  '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123", "contentFormat": "adf",
+    "commentBody": "{\"type\":\"doc\",\"version\":1,\"content\":[{\"type\":\"paragraph\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}]}"}'
+
+# Jira: update an existing comment in place (no delete tool exists)
+atlassian-cli call addCommentToJiraIssue \
+  '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123", "commentId": "<commentId>", "commentBody": "...", "contentFormat": "markdown"}'
 atlassian-cli call getTransitionsForJiraIssue '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123"}'
 atlassian-cli call transitionJiraIssue '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123", "transition": {"id": "31"}}'
 
@@ -114,9 +124,14 @@ steps.
 
 These fail silently or produce surprising output rather than erroring loudly — call them out before invoking.
 
-- **ADF for `description` and `commentBody`.** `createJiraIssue.description`, `editJiraIssue.fields.description`, and `addCommentToJiraIssue.commentBody` expect [Atlassian Document Format](https://developer.atlassian.com/cloud/jira/platform/apis/document/structure/) JSON, not Markdown or plain text. Plain strings often render fine because the MCP wraps them, but `**bold**`, `# headings`, code fences, and tables render literally. For anything richer than a paragraph, build an ADF doc: `{"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "..."}]}]}`.
-- **Confluence `body.value` is XHTML/storage format, not Markdown.** Markdown pasted into `createConfluencePage` / `updateConfluencePage` `body.value` renders as literal text. If you need Markdown ingress, convert client-side first (e.g. `markdown` → storage via the Confluence REST API conversion endpoint, or use a tool like `mark` if installed).
-- **`updateConfluencePage` is optimistic-concurrency.** You must pass `version.number = current + 1`. Get the current version via `getConfluencePage` first, then increment. Stale `version.number` returns a 409.
+- **`contentFormat` decides how bodies are parsed — always pass it explicitly.** Every body-bearing tool (`addCommentToJiraIssue`, `createJiraIssue`, `editJiraIssue`, `addWorklogToJiraIssue`, `createIssueLink`, and the Confluence page/comment tools) takes a sibling `contentFormat` enum, and the schema warns "Defaults vary by tool when omitted."
+  - Jira: `["markdown", "adf"]`, **markdown is the default**. Markdown gives you bold/headings/lists/code fences; use `"adf"` for tables, panels, mentions, and status lozenges.
+  - Confluence: `["html", "markdown", "adf"]`. `"html"` is the ergonomic choice — it is round-trip safe, preserves inline comments and local IDs, and supports `<table>/<thead>/<tr>/<th>/<td>` plus Confluence HTML+ nodes via `data-type` attributes (panels, expands, task lists, layouts). Never use storage XML (`<ac:structured-macro>`).
+  - **The silent-failure trap:** passing an ADF document *without* `contentFormat: "adf"` sends it through the Markdown converter, and the raw `{"type": "doc", ...}` is stored as literal visible text. The tell is markdown escaping the JSON's brackets (`\[`).
+- **`commentBody` is string-only; `description` is not.** `addCommentToJiraIssue.commentBody` is typed `string`, so an ADF document must be **JSON-stringified** (a bare object is rejected with `-32602 expected string, received object`). `createJiraIssue.description` is `anyOf: [string, {type: "doc"}]` and accepts either a stringified ADF doc or a bare object. Don't assume one shape works everywhere.
+- **Comments are editable, but nothing is deletable.** `addCommentToJiraIssue` takes an optional `commentId` to update an existing comment in place ("Add or update"). There is no delete-comment tool — nor any delete/archive op among the 31 tools — so a bad comment must be overwritten, not removed.
+- **Reads default to markdown — ask for ADF if you want structure.** `getJiraIssue` accepts `responseContentFormat: ["markdown", "adf"]`; with `"adf"` the comment `body` comes back as a real `doc` object. A `str` body just means you didn't request ADF — it is *not* a corruption signal. `getJiraIssue` also omits comments entirely unless you pass `fields: ["comment"]`.
+- **`updateConfluencePage` has no `version` parameter.** The server manages versioning; `required` is only `[cloudId, pageId, body]`. Pass `versionMessage` (a string) if you want a labelled revision. Do not try to compute `version.number` — there is no such field.
 - **Custom fields require discovery.** Project-specific required fields surface only via `getJiraIssueTypeMetaWithFields` (per project + issue type). Calling `createJiraIssue` without them returns a 400 listing the missing fields, but it's faster to discover up front.
 - **Assignees take `accountId`, not email or display name.** Use `lookupJiraAccountId '{"query": "user@example.com"}'` to resolve. The same applies to most user-valued fields.
 - **`atlassianUserInfo` is the *acting* user**, not necessarily the *target* user — useful for `assignee = currentUser()` JQL but not for resolving "Adam".
