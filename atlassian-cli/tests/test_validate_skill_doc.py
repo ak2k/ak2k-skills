@@ -117,6 +117,38 @@ def test_prose_placeholder_is_not_flagged():
     assert vsd.validate({}, doc) == []
 
 
+# --- tool-list drift --------------------------------------------------------
+
+TOOL_LIST_DOC = """## The tools
+
+**Jira** — `getJiraIssue` `createJiraIssue`
+
+If a name isn't here, the server is ahead of this file
+"""
+
+
+def test_tool_list_drift_detects_new_server_tool():
+    tools = {"getJiraIssue": {}, "createJiraIssue": {}, "brandNewTool": {}}
+    assert vsd.tool_list_drift(tools, TOOL_LIST_DOC)
+
+
+def test_tool_list_drift_detects_removed_server_tool():
+    tools = {"getJiraIssue": {}}
+    problems = vsd.tool_list_drift(tools, TOOL_LIST_DOC)
+    assert problems and "createJiraIssue" in problems[0]
+
+
+def test_tool_list_in_sync_is_silent():
+    tools = {"getJiraIssue": {}, "createJiraIssue": {}}
+    assert vsd.tool_list_drift(tools, TOOL_LIST_DOC) == []
+
+
+def test_missing_tool_list_section_is_not_flagged_on_fragments():
+    """validate() runs on doc fragments in tests; only main() requires the
+    section on the real SKILL.md."""
+    assert vsd.tool_list_drift({"getJiraIssue": {}}, "# no such section") == []
+
+
 def test_clean_document_passes():
     tools = {
         "getJiraIssue": {

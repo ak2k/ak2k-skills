@@ -31,8 +31,42 @@ atlassian-cli tools <toolName> --schema   # params, types, enums, required
 That is always current. Every documented parameter list rots when Atlassian
 renames a field; the schema cannot.
 
-To find a tool, **filter the listing** — bare `atlassian-cli tools` is ~1k
-tokens of all 31 descriptions:
+**Never omit the tool name.** `atlassian-cli tools --schema` dumps all 31
+schemas — ~14.7k tokens, and almost never what you want.
+
+**If `--schema` errors with `No such option`,** your installed CLI predates it
+(the skill and CLI ship from one derivation, so this means the package needs a
+rebuild). Fall back to the tool list below plus the examples in this file, and
+tell the user their `atlassian-cli` is out of date.
+
+**If a call fails with `Not authenticated`,** stop — an agent cannot complete
+the OAuth browser flow. Ask the user to run `atlassian-cli auth`. Every schema
+lookup and call needs auth, so retrying is pointless.
+
+## The tools
+
+Names only; run `--schema` on any of them for parameters. This list exists so
+you don't pay ~1k tokens listing tools just to learn what exists.
+
+**Jira** — `getJiraIssue` `createJiraIssue` `editJiraIssue`
+`searchJiraIssuesUsingJql` `addCommentToJiraIssue` `addWorklogToJiraIssue`
+`transitionJiraIssue` `getTransitionsForJiraIssue` `createIssueLink`
+`getIssueLinkTypes` `lookupJiraAccountId` `getVisibleJiraProjects`
+`getJiraProjectIssueTypesMetadata` `getJiraIssueTypeMetaWithFields`
+`getJiraIssueRemoteIssueLinks`
+
+**Confluence** — `getConfluencePage` `createConfluencePage`
+`updateConfluencePage` `getPagesInConfluenceSpace` `getConfluenceSpaces`
+`getConfluencePageDescendants` `searchConfluenceUsingCql`
+`getConfluencePageFooterComments` `getConfluencePageInlineComments`
+`getConfluenceCommentChildren` `createConfluenceFooterComment`
+`createConfluenceInlineComment`
+
+**Cross-product** — `search` (Rovo) `fetch` `atlassianUserInfo`
+`getAccessibleAtlassianResources`
+
+If a name isn't here, the server is ahead of this file — **filter the live
+listing** rather than reading all of it:
 
 ```bash
 atlassian-cli tools | grep -i comment     # ~4x cheaper than the full list

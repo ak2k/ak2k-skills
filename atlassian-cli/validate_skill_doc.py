@@ -145,6 +145,33 @@ def enum_mismatch(value, spec: dict) -> str | None:
     return f"not in enum {allowed}"
 
 
+TOOL_LIST_RE = re.compile(r"## The tools\n(.*?)(?=\nIf a name isn't here)", re.S)
+
+
+def tool_list_drift(tools: dict[str, dict], text: str) -> list[str]:
+    """Keep SKILL.md's discovery list honest against the server.
+
+    The list is a deliberate exception to "no transcribed API surface": bare
+    names let an agent skip a ~1k-token listing round-trip, and names churn far
+    more slowly than parameters. But transcribed is transcribed — unchecked, it
+    would rot exactly like the parameter tables this whole effort removed.
+    """
+    section = TOOL_LIST_RE.search(text)
+    if not section:
+        # Only the real SKILL.md is required to carry the list; validate() is
+        # also called on fragments in tests and on partial docs.
+        return []
+    if not tools:
+        return []  # nothing to compare against
+    listed = set(re.findall(r"`([A-Za-z]\w*)`", section.group(1)))
+    problems = []
+    if missing := sorted(set(tools) - listed):
+        problems.append(f"SKILL.md tool list is missing: {', '.join(missing)}")
+    if extra := sorted(listed - set(tools)):
+        problems.append(f"SKILL.md tool list names non-existent tools: {', '.join(extra)}")
+    return problems
+
+
 def validate(tools: dict[str, dict], text: str) -> list[str]:
     problems: list[str] = []
 
@@ -167,6 +194,8 @@ def validate(tools: dict[str, dict], text: str) -> list[str]:
                     "not be parsed — quote the JSON in single quotes on one "
                     "logical line, or it ships unchecked"
                 )
+
+    problems += tool_list_drift(tools, text)
 
     for tool, args, raw in parsed:
         if tool not in tools:
@@ -200,6 +229,11 @@ def main() -> int:
     text = SKILL.read_text()
 
     problems = validate(tools, text)
+    if not TOOL_LIST_RE.search(text):
+        problems.append(
+            "SKILL.md: '## The tools' section is missing — agents lose tool "
+            "discovery and pay a ~1k-token listing round-trip instead"
+        )
     examples = len(parse_examples(text))
     if problems:
         print(f"{len(problems)} problem(s) in {SKILL.relative_to(REPO)}:\n")
