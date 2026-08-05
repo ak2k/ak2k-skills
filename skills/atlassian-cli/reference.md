@@ -4,6 +4,12 @@
 
 31 tools. `R` marks a required parameter. Regenerate with `atlassian-cli/refresh_skill_reference.py --update`.
 
+Reading one tool's section costs a small fraction of the whole file — extract just the one you need:
+
+```bash
+awk '/^## <toolName>$/{f=1;print;next} f&&/^## /{exit} f' reference.md
+```
+
 ## Contents
 
 - addCommentToJiraIssue

@@ -13,9 +13,19 @@ atlassian-cli call <toolName> '<json>'    # invoke one; output is JSON, pipe to 
 atlassian-cli status                      # auth state
 ```
 
-**Full parameter reference: [reference.md](reference.md)** — every tool, its
-parameters, types, and which are required. Generated from the live schema, so
-it cannot drift. Read it before composing any call you haven't made before;
+**Parameter reference: [reference.md](reference.md)** — every tool, its
+parameters, types, and which are required, generated from the live schema so it
+cannot drift. Check it before composing any call you haven't made before.
+
+It covers every tool at once, so **extract the one you need** rather than
+reading the whole file — a single section is ~30× cheaper:
+
+```bash
+# one tool's params (prints the section, stops at the next heading)
+awk '/^## addCommentToJiraIssue$/{f=1;print;next} f&&/^## /{exit} f' reference.md
+grep '^- ' reference.md      # just the tool names
+```
+
 `atlassian-cli tools` is the ultimate authority if the two ever disagree.
 
 Nearly every tool takes `cloudId` (site UUID *or* hostname like
