@@ -1,132 +1,181 @@
 ---
 name: atlassian-cli
-description: Query and update Atlassian Jira, Confluence, and Compass via Atlassian's official Remote MCP. Use when the user asks about Jira issues, JQL searches, sprints, Confluence pages, or any Atlassian product operation.
+description: Query and update Atlassian Jira and Confluence via Atlassian's official Remote MCP. Use when the user asks about Jira issues, JQL searches, sprints, Confluence pages, or any Jira/Confluence operation.
 ---
 
-# Usage
+# atlassian-cli
+
+Thin pass-through to Atlassian's Remote MCP (`mcp.atlassian.com/v1/mcp`):
 
 ```bash
-# List available tools (discovered dynamically from the Atlassian MCP)
-atlassian-cli tools
-
-# Identity + site discovery (most tools take cloudId as a parameter)
-atlassian-cli call atlassianUserInfo '{}'
-atlassian-cli call getAccessibleAtlassianResources '{}'
-
-# Default search — Rovo Search across both Jira and Confluence.
-# The MCP itself recommends this over CQL/JQL unless the user explicitly
-# uses those query languages. Returns mixed Jira issues + Confluence pages.
-atlassian-cli call search '{"cloudId": "<cloudId>", "query": "kickoff notes"}'
-
-# Jira: JQL search (use when user gives a JQL expression)
-atlassian-cli call searchJiraIssuesUsingJql \
-  '{"cloudId": "<cloudId>", "jql": "assignee = currentUser() AND status != Done"}'
-
-# Jira: get / edit / create / comment / transition
-atlassian-cli call getJiraIssue '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123"}'
-atlassian-cli call editJiraIssue '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123", "fields": {"summary": "..."}}'
-atlassian-cli call createJiraIssue '{"cloudId": "<cloudId>", "projectKey": "PROJ", "issueTypeName": "Task", "summary": "..."}'
-atlassian-cli call addCommentToJiraIssue '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123", "commentBody": "..."}'
-atlassian-cli call getTransitionsForJiraIssue '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123"}'
-atlassian-cli call transitionJiraIssue '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123", "transition": {"id": "31"}}'
-
-# Jira: assignee resolution (turns email/displayName into accountId for createJiraIssue/editJiraIssue)
-atlassian-cli call lookupJiraAccountId '{"cloudId": "<cloudId>", "query": "user@example.com"}'
-
-# Jira: worklog
-atlassian-cli call addWorklogToJiraIssue '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-123", "timeSpent": "2h", "comment": "..."}'
-
-# Jira: issue links (e.g., "blocks" / "is blocked by")
-atlassian-cli call getIssueLinkTypes '{"cloudId": "<cloudId>"}'
-atlassian-cli call createIssueLink \
-  '{"cloudId": "<cloudId>", "type": {"name": "Blocks"}, "inwardIssue": {"key": "PROJ-1"}, "outwardIssue": {"key": "PROJ-2"}}'
-
-# Jira: discover field metadata for a project/issue type before createJiraIssue
-atlassian-cli call getVisibleJiraProjects '{"cloudId": "<cloudId>"}'
-atlassian-cli call getJiraProjectIssueTypesMetadata '{"cloudId": "<cloudId>", "projectIdOrKey": "PROJ"}'
-atlassian-cli call getJiraIssueTypeMetaWithFields '{"cloudId": "<cloudId>", "projectIdOrKey": "PROJ", "issueTypeId": "10001"}'
-
-# Confluence: CQL search (use when user gives a CQL expression)
-atlassian-cli call searchConfluenceUsingCql \
-  '{"cloudId": "<cloudId>", "cql": "type = page AND space = DEV AND title ~ \"deployment\""}'
-
-# Confluence: get / create / update pages
-atlassian-cli call getConfluenceSpaces '{"cloudId": "<cloudId>"}'
-atlassian-cli call getPagesInConfluenceSpace '{"cloudId": "<cloudId>", "spaceId": "..."}'
-atlassian-cli call getConfluencePage '{"cloudId": "<cloudId>", "pageId": "12345"}'
-atlassian-cli call createConfluencePage \
-  '{"cloudId": "<cloudId>", "spaceId": "...", "title": "...", "body": {"representation": "storage", "value": "<p>...</p>"}}'
-atlassian-cli call updateConfluencePage \
-  '{"cloudId": "<cloudId>", "pageId": "12345", "title": "...", "body": {"representation": "storage", "value": "<p>...</p>"}, "version": {"number": 2}}'
-
-# Confluence: comments (footer = page-level, inline = anchored to text)
-atlassian-cli call getConfluencePageFooterComments '{"cloudId": "<cloudId>", "pageId": "12345"}'
-atlassian-cli call createConfluenceFooterComment '{"cloudId": "<cloudId>", "pageId": "12345", "body": {"representation": "storage", "value": "..."}}'
-
-# ARI (Atlassian Resource Identifier) lookup — when an ID is in ARI form, use this
-atlassian-cli call fetch '{"ari": "ari:cloud:jira:..."}'
-
-# Check auth status
-atlassian-cli status
+atlassian-cli call <toolName> '<json>'    # invoke one; output is JSON
+atlassian-cli status                      # auth state
 ```
+
+**Always narrow the output.** Responses are verbose — a bare `getJiraIssue` is
+~1.5k tokens of fields you didn't ask for. Ask the server for less, then `jq`
+what's left:
+
+```bash
+atlassian-cli call getJiraIssue '{"cloudId":"...","issueIdOrKey":"PROJ-1","fields":["summary","status"]}' \
+  | jq '{key, summary: .fields.summary, status: .fields.status.name}'   # ~30x smaller
+```
+
+**Before composing any call you haven't made before, ask the server for its
+parameters** — never guess them and never trust prose, including this file:
+
+```bash
+atlassian-cli tools <toolName> --schema   # params, types, enums, required
+```
+
+That is always current. Every documented parameter list rots when Atlassian
+renames a field; the schema cannot.
+
+To find a tool, **filter the listing** — bare `atlassian-cli tools` is ~1k
+tokens of all 31 descriptions:
+
+```bash
+atlassian-cli tools | grep -i comment     # ~4x cheaper than the full list
+atlassian-cli tools | awk '{print $1}'    # names only, ~6x cheaper
+```
+
+Nearly every tool takes `cloudId` (site UUID *or* hostname like
+`kanerai.atlassian.net`). Get it once from `getAccessibleAtlassianResources`
+and reuse it.
+
+# Finding things
+
+**`search` (Rovo) is the default** — it spans Jira *and* Confluence and takes
+natural language. Reach for JQL/CQL only when the user supplies an explicit
+query expression, or when you need precise filters (assignee, status, date).
+
+```bash
+# Rovo: natural language, mixed issues + pages. Filter the type you want.
+atlassian-cli call search '{"cloudId": "<cloudId>", "query": "empty collateral versions"}' \
+  | jq '[.results[] | select(.type == "issue") | {title, url}]'
+
+# JQL: when you need exact filters
+atlassian-cli call searchJiraIssuesUsingJql \
+  '{"cloudId": "<cloudId>", "jql": "assignee = currentUser() AND status != Done"}' \
+  | jq '[.issues[] | {key, summary: .fields.summary}]'
+```
+
+Rovo ranks semantically, so phrasing matters: a query loaded with extra terms
+can bury the issue you want under Confluence pages. If a known ticket doesn't
+surface, re-query with fewer, more distinctive words before concluding it
+isn't there.
 
 # Authentication
 
-Run `atlassian-cli auth` to authenticate via OAuth 2.1 (3LO consent flow). The
-browser will open the Atlassian consent screen — pick which Atlassian apps
-(Jira, Confluence, Compass) to grant access to. Tokens are cached at
-`~/.config/atlassian/token.json` and auto-refresh.
+`atlassian-cli auth` runs an OAuth 2.1 browser consent flow — an agent cannot
+drive it, so ask the user to run it. Refreshing *writes*
+`~/.config/atlassian/token.json`, so sandboxed calls fail with `PermissionError`
+and need `dangerouslyDisableSandbox`.
 
-# Workflow templates
+Scope is granted per-app: on a Jira+Confluence-only grant there are **no Compass
+tools at all** — check `atlassian-cli tools` before routing Compass work here.
+Bitbucket is never covered.
 
-Atlassian's 5 official workflow skills ship under `./workflows/<name>/SKILL.md`
-relative to this skill's directory. They are NOT registered as top-level skills
-(intentional — keeps idle context lean); load the relevant one with the Read
-tool when the task fits.
+# Formatting: the `contentFormat` trap
 
-| Workflow | When to load it |
-|---|---|
-| `workflows/triage-issue/SKILL.md` | User reports a bug or error message. Searches Jira for duplicates, classifies the issue, helps create a structured ticket or augment an existing one. |
-| `workflows/spec-to-backlog/SKILL.md` | User has a spec / PRD doc (in Confluence or pasted) and wants it broken down into Jira epics + stories. |
-| `workflows/capture-tasks-from-meeting-notes/SKILL.md` | User has meeting notes (Confluence page or pasted text) and wants action items extracted into Jira issues with assignees. |
-| `workflows/generate-status-report/SKILL.md` | User wants a project status report — querying Jira via JQL, formatting, optionally publishing to Confluence. |
-| `workflows/search-company-knowledge/SKILL.md` | User has a question whose answer probably lives across Jira + Confluence; uses Rovo Search and synthesizes. |
+Every body-bearing tool (comments, descriptions, worklogs, Confluence pages)
+takes a sibling `contentFormat`. **Always pass it explicitly** — the schema
+itself says "defaults vary by tool when omitted."
 
-These workflows are written by Atlassian to invoke MCP tools by name
-(`searchJiraIssuesUsingJql(...)`, `getJiraIssue(...)`, `createJiraIssue(...)`,
-etc.). Translate each such reference into the equivalent
-`atlassian-cli call <name> '<json>'` invocation when executing the workflow's
-steps.
+- **Jira** — `markdown` (default) or `adf`. Markdown is more capable than it
+  looks: bold, code fences, nested lists, **and pipe tables** all convert to
+  real ADF nodes. A `| a | b |` table becomes a genuine `table`/`tableRow`/
+  `tableCell` tree, and a `- one<br>- two` cell nests a `bulletList` inside the
+  cell. Reach for `adf` only for nodes markdown cannot spell — panels, status
+  lozenges, mentions, media — or when you need exact structural control.
+- **Confluence** — `html` (round-trip safe, preserves inline comments and local
+  IDs, full `<table>` support plus HTML+ `data-type` nodes), `markdown`, or
+  `adf`. Never storage XML (`<ac:structured-macro>`).
 
-# Notes
+**The silent failure:** passing an ADF document *without* `contentFormat: "adf"`
+runs it through the markdown converter and stores the raw `{"type": "doc", ...}`
+as literal visible text. The tell is markdown escaping the JSON's brackets
+(`\[`). If you see that, you forgot the flag.
 
-- **Tool discovery is dynamic** — `atlassian-cli tools` is the source of truth. Atlassian's Remote MCP currently exposes ~33 tools; if the user's site has a different scope grant (e.g. no Compass), the list may differ.
-- **Most tools require `cloudId`** — the unique site identifier. Get it once with `atlassian-cli call getAccessibleAtlassianResources '{}'` and reuse it for the rest of the session. The site hostname (e.g. `kanerai.atlassian.net`) often works in place of the UUID.
-- **Default search is `search` (Rovo)**, not CQL/JQL — only fall back to `searchJiraIssuesUsingJql` / `searchConfluenceUsingCql` when the user provides an explicit query expression.
-- **No destructive operations exposed.** The MCP intentionally omits `deleteJiraIssue` / `deletePage` / `archive*` etc. — Atlassian's design choice for safety. If the user needs deletion, route them to the Atlassian web UI or use the REST API directly.
-- **`editJiraIssue`** is the update verb (not `updateJiraIssue`). For workflow transitions use `transitionJiraIssue` with a transition ID from `getTransitionsForJiraIssue`.
-- **Worklog** uses Jira's natural-language time format: `1w`, `2d`, `3h`, `30m`, or combined like `1d 4h`.
-- **Issue link directionality:** for "Blocks", `inwardIssue` is the *blocker*, `outwardIssue` is the *blocked* item — i.e., "A is blocked by B" → `inwardIssue: B, outwardIssue: A`.
-- **Bitbucket is NOT covered** by Atlassian's Remote MCP. Use a separate tool for Bitbucket operations.
-- **Output is JSON** — pipe through `jq` for ad-hoc filtering.
+```bash
+# a markdown table is a real Jira table — no ADF needed
+atlassian-cli call addCommentToJiraIssue \
+  '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-1", "contentFormat": "markdown",
+    "commentBody": "| Range | Count |\n| --- | --- |\n| 2024-05 | 120 |"}'
 
-# Footguns
+# ADF must be JSON-STRINGIFIED into commentBody
+atlassian-cli call addCommentToJiraIssue \
+  '{"cloudId": "<cloudId>", "issueIdOrKey": "PROJ-1", "contentFormat": "adf",
+    "commentBody": "{\"type\":\"doc\",\"version\":1,\"content\":[...]}"}'
+```
 
-These fail silently or produce surprising output rather than erroring loudly — call them out before invoking.
+`commentBody` is typed `string`, so ADF must be stringified there. But
+`createJiraIssue.description` is `anyOf: [string, {type: "doc"}]` and takes a
+bare object too — don't assume one shape works everywhere.
 
-- **ADF for `description` and `commentBody`.** `createJiraIssue.description`, `editJiraIssue.fields.description`, and `addCommentToJiraIssue.commentBody` expect [Atlassian Document Format](https://developer.atlassian.com/cloud/jira/platform/apis/document/structure/) JSON, not Markdown or plain text. Plain strings often render fine because the MCP wraps them, but `**bold**`, `# headings`, code fences, and tables render literally. For anything richer than a paragraph, build an ADF doc: `{"type": "doc", "version": 1, "content": [{"type": "paragraph", "content": [{"type": "text", "text": "..."}]}]}`.
-- **Confluence `body.value` is XHTML/storage format, not Markdown.** Markdown pasted into `createConfluencePage` / `updateConfluencePage` `body.value` renders as literal text. If you need Markdown ingress, convert client-side first (e.g. `markdown` → storage via the Confluence REST API conversion endpoint, or use a tool like `mark` if installed).
-- **`updateConfluencePage` is optimistic-concurrency.** You must pass `version.number = current + 1`. Get the current version via `getConfluencePage` first, then increment. Stale `version.number` returns a 409.
-- **Custom fields require discovery.** Project-specific required fields surface only via `getJiraIssueTypeMetaWithFields` (per project + issue type). Calling `createJiraIssue` without them returns a 400 listing the missing fields, but it's faster to discover up front.
-- **Assignees take `accountId`, not email or display name.** Use `lookupJiraAccountId '{"query": "user@example.com"}'` to resolve. The same applies to most user-valued fields.
-- **`atlassianUserInfo` is the *acting* user**, not necessarily the *target* user — useful for `assignee = currentUser()` JQL but not for resolving "Adam".
+**Reading it back:** pass `responseContentFormat: "adf"` to get a real `doc`
+object. A string body just means you didn't ask for ADF — it is *not* a
+corruption signal. `getJiraIssue` also omits comments entirely unless you pass
+`fields: ["comment"]`.
+
+# Gotchas
+
+- **Nothing is deletable.** No `deleteJiraIssue` / `deletePage` / `archive*` —
+  a deliberate Atlassian safety choice. But **comments are editable**: pass
+  `commentId` to `addCommentToJiraIssue` to overwrite one in place. A bad
+  comment gets rewritten, never removed; route real deletions to the web UI.
+- **`editJiraIssue`** is the update verb (there is no `updateJiraIssue`).
+  Status changes go through `transitionJiraIssue` with an ID from
+  `getTransitionsForJiraIssue`.
+- **Users are `accountId`, never email or display name.** Resolve with
+  `lookupJiraAccountId`. Note `atlassianUserInfo` is the *acting* user — useful
+  for `currentUser()` JQL, useless for resolving "Adam".
+- **Custom fields need discovery.** Project-specific required fields surface
+  only via `getJiraIssueTypeMetaWithFields`; skipping it means a 400 that lists
+  what you missed.
+- **Issue-link directionality:** for "Blocks", `inwardIssue` is the *blocker* —
+  "A is blocked by B" means `inwardIssue: B, outwardIssue: A`.
+- **Worklog time** is Jira's natural-language format: `1w`, `2d`, `3h`, `30m`,
+  or `1d 4h`.
 
 # Write-op safety
 
-The MCP omits delete/archive ops, but the writes it *does* expose can still cause real-world impact (state changes, notifications, version bumps, comment churn). Apply the same hygiene as for destructive ops:
+Nothing here is deletable, but the writes that *are* exposed change state,
+notify watchers, and leave an audit trail. Apply destructive-op hygiene:
 
-- **Before bulk write via JQL/CQL:** run the same query as a search call first and show the user the resolved targets (count + a sample of keys/titles). Don't iterate writes against an unverified target list.
-- **Before `transitionJiraIssue` / `editJiraIssue`:** name the target issue, the field changing, and the new value in your acknowledgement to the user, especially when the operation triggers notifications, workflow side effects, or downstream automation.
-- **`addWorklogToJiraIssue` and comments are visible to other watchers and may trigger notifications.** Confirm with the user before posting.
-- **`createIssueLink` is reversible but visible.** Get the link type wrong and you've published a wrong relationship publicly; the fix is a second call but the audit trail keeps both.
-- **Don't infer "current sprint" / "active project" silently.** When a user says "the bug" or "this sprint", confirm which one before writing. JQL like `assignee = currentUser() AND sprint in openSprints()` is fine for *reads*; for writes, pin to an explicit issue key.
+- **Before a bulk write driven by JQL/CQL:** run the query as a *search* first
+  and show the user the resolved targets. Never iterate writes over an
+  unverified list.
+- **Before `transitionJiraIssue` / `editJiraIssue`:** name the issue, the field,
+  and the new value in your acknowledgement — these trigger notifications,
+  workflow side effects, and downstream automation.
+- **Comments and worklogs are visible to watchers and notify them.** Confirm
+  before posting, especially on a ticket assigned to someone else.
+- **`createIssueLink` publishes a relationship.** Wrong link type is fixable
+  with a second call, but both survive in the audit trail.
+- **Never infer "the bug" or "this sprint".** Pin writes to an explicit issue
+  key; loose JQL is fine for reads only.
+
+# Workflow templates
+
+Atlassian's 5 official workflows ship under `workflows/` — `triage-issue`,
+`spec-to-backlog`, `capture-tasks-from-meeting-notes`, `generate-status-report`,
+`search-company-knowledge`. Deliberately not registered as top-level skills
+(keeps idle context lean); Read `workflows/<name>/SKILL.md` when one fits. They
+invoke MCP tools by bare name (`getJiraIssue(...)`) — translate each into
+`atlassian-cli call <name> '<json>'`.
+
+# Maintaining this skill
+
+This file deliberately carries **no parameter lists** — `atlassian-cli tools
+<name> --schema` is the source of truth, and anything transcribed here would
+rot. Keep it to judgment the schema can't express.
+
+The few illustrative examples above are checked against the live schema by:
+
+```bash
+atlassian-cli/validate_skill_doc.py   # tool exists, keys real, shapes match
+```
+
+Nonzero exit on drift. Needs an authenticated CLI, so it's a local pre-flight,
+not CI.

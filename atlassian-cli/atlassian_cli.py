@@ -451,11 +451,31 @@ def auth():
 
 
 @main.command()
-def tools():
-    """List available MCP tools (discovered dynamically)."""
+@click.argument("tool_name", required=False)
+@click.option(
+    "--schema",
+    is_flag=True,
+    help="Print the full input schema (parameters, types, required) as JSON.",
+)
+def tools(tool_name: str | None, schema: bool):
+    """List available MCP tools (discovered dynamically).
+
+    Pass TOOL_NAME to show just that tool; add --schema for its parameters:
+
+        atlassian-cli tools addCommentToJiraIssue --schema
+    """
     mcp = _mcp()
     try:
-        for tool in mcp.list_tools():
+        found = mcp.list_tools()
+        if tool_name:
+            found = [t for t in found if t["name"] == tool_name]
+            if not found:
+                raise SystemExit(f"no such tool: {tool_name}")
+        if schema:
+            out = {t["name"]: t.get("inputSchema", {}) for t in found}
+            click.echo(json.dumps(out[tool_name] if tool_name else out, indent=2))
+            return
+        for tool in found:
             name = tool["name"]
             desc = tool.get("description", "")
             click.echo(f"  {name:40s} {desc}")
