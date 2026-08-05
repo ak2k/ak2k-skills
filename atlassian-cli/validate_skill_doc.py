@@ -104,7 +104,7 @@ def type_matches(value, spec: dict) -> bool:
     """
     if "anyOf" in spec:
         return any(type_matches(value, s) for s in spec["anyOf"])
-    expected = spec.get("type")
+    expected: object = spec.get("type")
     if expected is None:
         return True
     actual = json_type(value)
@@ -135,13 +135,10 @@ def validate(tools: dict[str, dict], text: str) -> list[str]:
                 )
             elif not type_matches(value, props[key]):
                 want = props[key].get("type", "?")
-                problems.append(
-                    f"{tool}.{key}: wrong shape — sent {json_type(value)}, want {want}"
-                )
+                problems.append(f"{tool}.{key}: wrong shape — sent {json_type(value)}, want {want}")
         for key in sorted(required - set(args)):
             problems.append(f"{tool}.{key}: required parameter missing from example")
     return problems
-
 
 
 def main() -> int:
