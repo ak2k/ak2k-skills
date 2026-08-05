@@ -43,10 +43,27 @@ Nearly every tool takes `cloudId` (site UUID *or* hostname like
 `kanerai.atlassian.net`). Get it once from `getAccessibleAtlassianResources`
 and reuse it.
 
+# Finding things
+
+**`search` (Rovo) is the default** — it spans Jira *and* Confluence and takes
+natural language. Reach for JQL/CQL only when the user supplies an explicit
+query expression, or when you need precise filters (assignee, status, date).
+
 ```bash
+# Rovo: natural language, mixed issues + pages. Filter the type you want.
+atlassian-cli call search '{"cloudId": "<cloudId>", "query": "empty collateral versions"}' \
+  | jq '[.results[] | select(.type == "issue") | {title, url}]'
+
+# JQL: when you need exact filters
 atlassian-cli call searchJiraIssuesUsingJql \
-  '{"cloudId": "<cloudId>", "jql": "assignee = currentUser() AND status != Done"}'
+  '{"cloudId": "<cloudId>", "jql": "assignee = currentUser() AND status != Done"}' \
+  | jq '[.issues[] | {key, summary: .fields.summary}]'
 ```
+
+Rovo ranks semantically, so phrasing matters: a query loaded with extra terms
+can bury the issue you want under Confluence pages. If a known ticket doesn't
+surface, re-query with fewer, more distinctive words before concluding it
+isn't there.
 
 # Authentication
 
@@ -110,9 +127,6 @@ corruption signal. `getJiraIssue` also omits comments entirely unless you pass
 - **`editJiraIssue`** is the update verb (there is no `updateJiraIssue`).
   Status changes go through `transitionJiraIssue` with an ID from
   `getTransitionsForJiraIssue`.
-- **Default search is `search` (Rovo)**, spanning Jira + Confluence. Only reach
-  for `searchJiraIssuesUsingJql` / `searchConfluenceUsingCql` when the user
-  supplies an explicit query expression.
 - **Users are `accountId`, never email or display name.** Resolve with
   `lookupJiraAccountId`. Note `atlassianUserInfo` is the *acting* user — useful
   for `currentUser()` JQL, useless for resolving "Adam".
