@@ -8,9 +8,17 @@ description: Query and update Atlassian Jira and Confluence via Atlassian's offi
 Thin pass-through to Atlassian's Remote MCP (`mcp.atlassian.com/v1/mcp`):
 
 ```bash
-atlassian-cli tools                       # live tool list — the source of truth
-atlassian-cli call <toolName> '<json>'    # invoke one; output is JSON, pipe to jq
+atlassian-cli call <toolName> '<json>'    # invoke one; output is JSON
 atlassian-cli status                      # auth state
+```
+
+**Always narrow the output.** Responses are verbose — a bare `getJiraIssue` is
+~1.5k tokens of fields you didn't ask for. Ask the server for less, then `jq`
+what's left:
+
+```bash
+atlassian-cli call getJiraIssue '{"cloudId":"...","issueIdOrKey":"PROJ-1","fields":["summary","status"]}' \
+  | jq '{key, summary: .fields.summary, status: .fields.status.name}'   # ~30x smaller
 ```
 
 **Before composing any call you haven't made before, ask the server for its
@@ -18,11 +26,18 @@ parameters** — never guess them and never trust prose, including this file:
 
 ```bash
 atlassian-cli tools <toolName> --schema   # params, types, enums, required
-atlassian-cli tools                       # names + one-line descriptions
 ```
 
 That is always current. Every documented parameter list rots when Atlassian
 renames a field; the schema cannot.
+
+To find a tool, **filter the listing** — bare `atlassian-cli tools` is ~1k
+tokens of all 31 descriptions:
+
+```bash
+atlassian-cli tools | grep -i comment     # ~4x cheaper than the full list
+atlassian-cli tools | awk '{print $1}'    # names only, ~6x cheaper
+```
 
 Nearly every tool takes `cloudId` (site UUID *or* hostname like
 `kanerai.atlassian.net`). Get it once from `getAccessibleAtlassianResources`
