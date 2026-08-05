@@ -1,5 +1,8 @@
 """Regression tests for validate_skill_doc.py.
 
+Run with pytest or `python -m unittest discover`. Plain asserts and stdlib
+only — matching kagi/tests, and keeping pytest out of the treefmt mypy env.
+
 Every case here is a defect that shipped and was found only by adversarial
 review — the validator looked like coverage while being a no-op on the inputs
 that mattered. A validator with no tests of its own is the same trap one level
@@ -10,8 +13,6 @@ from __future__ import annotations
 
 import importlib.util
 from pathlib import Path
-
-import pytest
 
 SRC = Path(__file__).resolve().parent.parent / "validate_skill_doc.py"
 _spec = importlib.util.spec_from_file_location("vsd", SRC)
@@ -96,18 +97,15 @@ def test_hyphenated_tool_name_is_seen():
     assert vsd.parse_examples(call("get-jira-issue", '{"a":1}'))
 
 
-@pytest.mark.parametrize(
-    "line",
-    [
-        "atlassian-cli call totallyFakeTool",
-        'atlassian-cli call getJiraIssue "{\\"bogusParam\\":1}"',
-    ],
-)
-def test_unparseable_invocation_is_reported_not_ignored(line):
+def test_unparseable_invocation_is_reported_not_ignored():
     """A `call` the regex can't fully match must fail loudly. Previously these
     contributed zero examples and the run still printed 'ok'."""
-    problems = vsd.validate({"getJiraIssue": {"inputSchema": {}}}, line)
-    assert problems, f"silent pass for: {line}"
+    for line in (
+        "atlassian-cli call totallyFakeTool",
+        'atlassian-cli call getJiraIssue "{\\"bogusParam\\":1}"',
+    ):
+        problems = vsd.validate({"getJiraIssue": {"inputSchema": {}}}, line)
+        assert problems, f"silent pass for: {line}"
 
 
 def test_prose_placeholder_is_not_flagged():
