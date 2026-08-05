@@ -13,20 +13,16 @@ atlassian-cli call <toolName> '<json>'    # invoke one; output is JSON, pipe to 
 atlassian-cli status                      # auth state
 ```
 
-**Parameter reference: [reference.md](reference.md)** — every tool, its
-parameters, types, and which are required, generated from the live schema so it
-cannot drift. Check it before composing any call you haven't made before.
-
-It covers every tool at once, so **extract the one you need** rather than
-reading the whole file — a single section is ~30× cheaper:
+**Before composing any call you haven't made before, ask the server for its
+parameters** — never guess them and never trust prose, including this file:
 
 ```bash
-# one tool's params (prints the section, stops at the next heading)
-awk '/^## addCommentToJiraIssue$/{f=1;print;next} f&&/^## /{exit} f' reference.md
-grep '^- ' reference.md      # just the tool names
+atlassian-cli tools <toolName> --schema   # params, types, enums, required
+atlassian-cli tools                       # names + one-line descriptions
 ```
 
-`atlassian-cli tools` is the ultimate authority if the two ever disagree.
+That is always current. Every documented parameter list rots when Atlassian
+renames a field; the schema cannot.
 
 Nearly every tool takes `cloudId` (site UUID *or* hostname like
 `kanerai.atlassian.net`). Get it once from `getAccessibleAtlassianResources`
@@ -142,12 +138,15 @@ invoke MCP tools by bare name (`getJiraIssue(...)`) — translate each into
 
 # Maintaining this skill
 
-`reference.md` is generated — never hand-edit it. After an upstream MCP change:
+This file deliberately carries **no parameter lists** — `atlassian-cli tools
+<name> --schema` is the source of truth, and anything transcribed here would
+rot. Keep it to judgment the schema can't express.
+
+The few illustrative examples above are checked against the live schema by:
 
 ```bash
-atlassian-cli/refresh_skill_reference.py --update   # regenerate + validate
+atlassian-cli/validate_skill_doc.py   # tool exists, keys real, shapes match
 ```
 
-It also validates every example in this file against the live schema (tool
-exists, keys are real parameters, value shapes match) and exits nonzero on
-drift. It needs an authenticated CLI, so it is a local check, not CI.
+Nonzero exit on drift. Needs an authenticated CLI, so it's a local pre-flight,
+not CI.
