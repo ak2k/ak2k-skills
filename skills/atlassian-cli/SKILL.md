@@ -205,11 +205,17 @@ This file deliberately carries **no parameter lists** — `atlassian-cli tools
 <name> --schema` is the source of truth, and anything transcribed here would
 rot. Keep it to judgment the schema can't express.
 
-The few illustrative examples above are checked against the live schema by:
+The few illustrative examples above are checked against the MCP schema — tool
+exists, keys are real parameters, shapes match, enums respected, required
+params present — plus the tool list above:
 
 ```bash
-atlassian-cli/validate_skill_doc.py   # tool exists, keys real, shapes match
+atlassian-cli/validate_skill_doc.py             # offline, vs committed snapshot
+atlassian-cli/validate_skill_doc.py --refresh   # re-capture snapshot (needs auth)
 ```
 
-Nonzero exit on drift. Needs an authenticated CLI, so it's a local pre-flight,
-not CI.
+The offline form runs in CI on every PR (`checks.skill-doc-atlassian-cli`).
+`tools/list` is authenticated, so CI validates against
+`atlassian-cli/mcp-schemas.json` rather than the live server; run `--refresh`
+after an upstream change and the drift arrives as a reviewable diff. That
+snapshot is a CI fixture, not documentation — never cite it for parameters.

@@ -224,6 +224,28 @@
             in
             packageChecks
             // {
+              # Doc-drift guard: every `atlassian-cli call` example in
+              # SKILL.md is checked against the MCP schema — tool exists, keys
+              # are real parameters, value shapes match, enums are respected,
+              # required params present — plus the `## The tools` list.
+              #
+              # Runs against the COMMITTED snapshot (atlassian-cli/
+              # mcp-schemas.json), not the live server: `tools/list` is
+              # authenticated, and a long-lived Atlassian OAuth token in repo
+              # secrets is too high a price for linting markdown. The snapshot
+              # keeps this hermetic so it runs on every PR; refresh it with
+              # `atlassian-cli/validate_skill_doc.py --refresh` and upstream
+              # drift shows up as a reviewable diff. The script fails if the
+              # snapshot goes stale, so it cannot silently check nothing.
+              skill-doc-atlassian-cli = pkgs.runCommand "skill-doc-atlassian-cli" { } ''
+                cp -r ${./atlassian-cli} atlassian-cli
+                cp -r ${./skills} skills
+                chmod -R u+w atlassian-cli skills
+                ${pkgs.python3}/bin/python3 atlassian-cli/validate_skill_doc.py
+                touch $out
+              '';
+            }
+            // {
               # Drift guard: Renovate manages the `inputs.msgvault.url` tag and
               # the `msgvaultVersion` literal in lockstep via one custom-manager
               # entry. If they somehow desynchronise, the binary's reported
