@@ -147,6 +147,32 @@ def test_missing_tool_list_section_is_not_flagged_on_fragments():
     assert vsd.tool_list_drift({"getJiraIssue": {}}, "# no such section") == []
 
 
+# --- snapshot -----------------------------------------------------------------
+
+
+def test_snapshot_exists_and_is_current():
+    """The committed snapshot is what CI validates against — if it goes stale
+    the check silently weakens, so the script treats age as a failure."""
+    tools, problems = vsd.load_snapshot()
+    assert problems == [], problems
+    assert len(tools) > 20, "snapshot looks truncated"
+
+
+def test_snapshot_covers_every_documented_example():
+    """A snapshot missing a tool an example uses would report 'no such tool'
+    — catch that here rather than as a confusing CI failure."""
+    tools, _ = vsd.load_snapshot()
+    text = vsd.SKILL.read_text()
+    for name, _args, _raw in vsd.parse_examples(text):
+        assert name in tools, f"{name} used in SKILL.md but absent from snapshot"
+
+
+def test_real_skill_doc_validates_against_snapshot():
+    """End-to-end: the shipped doc must pass the exact check CI runs."""
+    tools, _ = vsd.load_snapshot()
+    assert vsd.validate(tools, vsd.SKILL.read_text()) == []
+
+
 def test_clean_document_passes():
     tools = {
         "getJiraIssue": {

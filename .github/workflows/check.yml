@@ -9,6 +9,13 @@ on:
       - '.github/workflows/**'
       - '**/pyproject.toml'
       - '**/*.py'
+      # SKILL.md content is validated by checks.skill-doc-* (examples checked
+      # against the MCP schema snapshot), so doc edits must run CI too. Without
+      # this a docs-only PR never queues the required checks and can therefore
+      # NEVER satisfy branch protection — it sits BLOCKED forever with an empty
+      # statusCheckRollup. That is what happened to #49.
+      - '**/*.md'
+      - '**/*.json'
   pull_request:
     branches: [main]
     paths:
@@ -17,6 +24,13 @@ on:
       - '.github/workflows/**'
       - '**/pyproject.toml'
       - '**/*.py'
+      # SKILL.md content is validated by checks.skill-doc-* (examples checked
+      # against the MCP schema snapshot), so doc edits must run CI too. Without
+      # this a docs-only PR never queues the required checks and can therefore
+      # NEVER satisfy branch protection — it sits BLOCKED forever with an empty
+      # statusCheckRollup. That is what happened to #49.
+      - '**/*.md'
+      - '**/*.json'
   workflow_dispatch:
 
 concurrency:
