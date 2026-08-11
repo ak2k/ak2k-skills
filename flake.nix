@@ -74,13 +74,11 @@
       msgvaultVersion = "0.14.0";
 
       # gws bundle membership is system-agnostic — derived from the upstream
-      # source tree, the same list on every platform.
+      # source tree, the same list on every platform. nix/gws.nix partitions
+      # the tree into top-level skills vs. verb-helpers nested under their
+      # service parent (see gws-skills/); the bundle exposes only the former.
       gwsSkillsDir = "${inputs.googleworkspace-cli}/skills";
-      gwsBundleSkills = lib.attrNames (
-        lib.filterAttrs (
-          name: type: type == "directory" && builtins.pathExists "${gwsSkillsDir}/${name}/SKILL.md"
-        ) (builtins.readDir gwsSkillsDir)
-      );
+      gwsSkills = import ./nix/gws.nix { inherit lib gwsSkillsDir; };
     in
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems = [
@@ -99,7 +97,7 @@
       #     programs.ak2k-skills.skills =
       #       [ "claude-sessions" "msgvault-query" ]
       #         ++ inputs.ak2k-skills.lib.bundles.gws;
-      flake.lib.bundles.gws = gwsBundleSkills;
+      flake.lib.bundles.gws = gwsSkills.topLevel;
 
       flake.homeManagerModules.default =
         { pkgs, ... }:
@@ -202,6 +200,9 @@
             kagi = pkgs.python3.pkgs.callPackage ./kagi { };
             krisp-cli = pkgs.python3.pkgs.callPackage ./krisp-cli { };
             gws = inputs.googleworkspace-cli.packages.${system}.default;
+            gws-skills = pkgs.callPackage ./gws-skills {
+              gwsSkillsSrc = "${inputs.googleworkspace-cli}/skills";
+            };
             msgvault = msgvaultPkg;
             # Pure re-export — never overrideAttrs this one: any change forks
             # the derivation off cache.numtide.com and forces a local .NET
