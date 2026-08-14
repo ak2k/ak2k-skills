@@ -44,7 +44,7 @@
     # the package + register the skill via nix/registry.nix.
     # Pinned to a tag so Renovate's github-releases regex manager auto-bumps
     # us on every new pplx-agent-tools release.
-    pplx-agent-tools.url = "github:ak2k/pplx-agent-tools/v0.4.0";
+    pplx-agent-tools.url = "github:ak2k/pplx-agent-tools/v0.4.1";
     pplx-agent-tools.inputs.nixpkgs.follows = "nixpkgs";
 
     # llm-agents.nix — source of the officecli package (iOfficeAI/OfficeCLI,
