@@ -37,12 +37,36 @@ jobs:
       - uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: |
+            experimental-features = nix-command flakes
             access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
 
-      - uses: renovatebot/github-action@v46.2.2
-        with:
-          token: ${{ secrets.RENOVATE_TOKEN }}
+      # renovate runs from nixpkgs rather than the Docker-based
+      # renovatebot/github-action. The action shells out to `docker run
+      # ghcr.io/renovatebot/renovate` mounting only /tmp, so the nix installed
+      # above lives on the host and is invisible inside that container. Two
+      # things need nix in renovate's OWN environment:
+      #   1. the nix manager's lockFileMaintenance (`nix flake update`), which
+      #      has therefore never been able to run here — PR #2 has sat open
+      #      since 2026-04 with no checks;
+      #   2. the `nix flake lock` postUpgradeTask in renovate.json, which keeps
+      #      flake.lock consistent with the tag pins the customManagers rewrite.
+      # Same pattern as ak2k/nix-config's renovate.yml.
+      - name: renovate
         env:
           LOG_LEVEL: ${{ inputs.logLevel || 'info' }}
           RENOVATE_REPOSITORIES: ${{ github.repository }}
-          RENOVATE_FORCE: ${{ inputs.overrideSchedule == 'y' && '{"schedule":null}' || '' }}
+          # `{}` rather than '' when not overriding: the CLI JSON-parses this
+          # env directly, where the action tolerated an empty value.
+          RENOVATE_FORCE: ${{ inputs.overrideSchedule == 'y' && '{"schedule":null}' || '{}' }}
+          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+          # No containerbase to install per-manager tooling outside the Docker
+          # image, so use what `nix shell` puts on PATH.
+          RENOVATE_BINARY_SOURCE: global
+          # postUpgradeTasks commands are refused unless they match one of
+          # these regexes, and this is admin-only config — it must live here as
+          # env, NOT in renovate.json, which would be ignored. Matched against
+          # the final resolved command, hence the anchors.
+          RENOVATE_ALLOWED_COMMANDS: '["^nix flake lock$"]'
+        # --inputs-from . so renovate resolves against this repo's pinned
+        # nixpkgs and substitutes from cache instead of drifting per run.
+        run: nix shell --inputs-from . nixpkgs#renovate -c renovate
