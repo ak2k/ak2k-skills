@@ -183,8 +183,23 @@
             __intentionallyOverridingVersion = true;
             version = msgvaultVersion;
             name = "msgvault-${msgvaultVersion}";
+            # Both module paths are stamped on purpose. Upstream renamed the Go
+            # module `github.com/wesm/msgvault` -> `go.kenn.io/msgvault` in
+            # wesm/msgvault#336 (shipped in 0.15.0), so the symbol this `-X`
+            # targets depends on which tag `inputs.msgvault` points at. The Go
+            # linker SILENTLY IGNORES a `-X` naming a symbol that does not
+            # exist, so listing both is safe at every tag and self-healing
+            # across the rename — whichever one resolves wins, the other is a
+            # no-op. Listing only one is what broke the v0.19.3 bump (#56): the
+            # stale github.com/... path matched nothing, and because this
+            # attribute REPLACES upstream's ldflags wholesale it also discarded
+            # upstream's own correct `-X go.kenn.io/...`, so the binary fell
+            # back to its compiled-in default and reported `msgvault dev`.
+            # Nothing was red at build time — only the msgvault-version-matches
+            # drift check below caught it.
             ldflags = [
               "-X github.com/wesm/msgvault/cmd/msgvault/cmd.Version=v${msgvaultVersion}"
+              "-X go.kenn.io/msgvault/cmd/msgvault/cmd.Version=v${msgvaultVersion}"
             ];
             postInstall = (old.postInstall or "") + ''
               mkdir -p $out/share/skills/msgvault-query
