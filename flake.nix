@@ -22,7 +22,7 @@
     # NOTE: `msgvaultVersion` below must match the tag in this URL. Both are
     # tracked by one Renovate custom-manager entry, and the
     # `msgvault-version-matches` flake check fails the build on drift.
-    msgvault.url = "github:wesm/msgvault/v0.14.0";
+    msgvault.url = "github:wesm/msgvault/v0.19.3";
 
     # Atlassian's official Remote MCP server repo — we don't need the server
     # itself (our atlassian-cli wraps it remotely), but the repo ships 5
@@ -71,7 +71,7 @@
 
       # Keep in lockstep with `inputs.msgvault.url`'s tag. Renovate manages
       # both; the msgvault-version-matches check asserts they agree.
-      msgvaultVersion = "0.14.0";
+      msgvaultVersion = "0.19.3";
 
       # gws bundle membership is system-agnostic — derived from the upstream
       # source tree, the same list on every platform.
