@@ -4,7 +4,7 @@ import json
 import re
 import shlex
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
@@ -20,7 +20,7 @@ def parse_timestamp(ts: object) -> datetime | None:
     if ts is None:
         return None
     if isinstance(ts, (int, float)):
-        return datetime.fromtimestamp(ts / 1000, tz=timezone.utc)
+        return datetime.fromtimestamp(ts / 1000, tz=UTC)
     if isinstance(ts, str):
         try:
             return datetime.fromisoformat(ts.replace("Z", "+00:00"))
@@ -208,7 +208,7 @@ def format_tokens(n: int) -> str:
 
 def format_relative_time(ts: datetime) -> str:
     """Format timestamp as relative time."""
-    secs = int((datetime.now(timezone.utc) - ts).total_seconds())
+    secs = int((datetime.now(UTC) - ts).total_seconds())
     if secs < 60:
         return "just now"
     if secs < 3600:
@@ -228,7 +228,7 @@ def collect_sessions(days: int, project: str | None, search: str | None, limit: 
     if not PROJECTS_DIR.exists():
         return []
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
     sessions = []
 
     for project_dir in PROJECTS_DIR.iterdir():
@@ -237,7 +237,7 @@ def collect_sessions(days: int, project: str | None, search: str | None, limit: 
 
         for jsonl_file in project_dir.glob("*.jsonl"):
             try:
-                mtime = datetime.fromtimestamp(jsonl_file.stat().st_mtime, tz=timezone.utc)
+                mtime = datetime.fromtimestamp(jsonl_file.stat().st_mtime, tz=UTC)
                 if mtime < cutoff:
                     continue
             except OSError:

@@ -108,7 +108,7 @@ def write_snapshot(tools: dict[str, dict], today: date) -> None:
 def load_tools() -> dict[str, dict]:
     """Fetch the live tool schemas via the installed atlassian-cli."""
     try:
-        import atlassian_cli  # noqa: F401
+        import atlassian_cli
     except ModuleNotFoundError:
         # Resolve the nix-wrapped install rather than requiring a venv.
         import subprocess
@@ -125,7 +125,7 @@ def load_tools() -> dict[str, dict]:
         if not paths:
             sys.exit(f"could not locate atlassian-cli site-packages from {target}")
         sys.path[:0] = paths
-        import atlassian_cli  # noqa: F811
+        import atlassian_cli
 
     tools = atlassian_cli._mcp().list_tools()
     return {t["name"]: t for t in tools}
@@ -204,7 +204,7 @@ def enum_mismatch(value, spec: dict) -> str | None:
     return f"not in enum {allowed}"
 
 
-TOOL_LIST_RE = re.compile(r"## The tools\n(.*?)(?=\nIf a name isn't here)", re.S)
+TOOL_LIST_RE = re.compile(r"## The tools\n(.*?)(?=\nIf a name isn't here)", re.DOTALL)
 
 
 def tool_list_drift(tools: dict[str, dict], text: str) -> list[str]:
