@@ -32,22 +32,34 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # persist-credentials: false so checkout doesn't leave the repo-scoped
+      # GITHUB_TOKEN as an `http.https://github.com/.extraheader` in git config.
+      # That header overrides the per-URL auth renovate builds for cross-repo
+      # git-refs `ls-remote` of private flake inputs (ak2k/surefetch) → 404.
+      # Harmless while renovate ran inside the Docker image, which never saw the
+      # runner's git config; running natively it inherits it.
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes
-            access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+            # NOT secrets.GITHUB_TOKEN: that is scoped to THIS repo, so nix
+            # 404s on the private ak2k/surefetch input and the whole
+            # `nix flake update` behind lockFileMaintenance dies with it.
+            # RENOVATE_TOKEN already spans ak2k/* — it is what renovate uses
+            # to resolve the same inputs.
+            access-tokens = github.com=${{ secrets.RENOVATE_TOKEN }}
 
       # renovate runs from nixpkgs rather than the Docker-based
       # renovatebot/github-action. The action shells out to `docker run
       # ghcr.io/renovatebot/renovate` mounting only /tmp, so the nix installed
       # above lives on the host and is invisible inside that container. Two
       # things need nix in renovate's OWN environment:
-      #   1. the nix manager's lockFileMaintenance (`nix flake update`), which
-      #      has therefore never been able to run here — PR #2 has sat open
-      #      since 2026-04 with no checks;
+      #   1. the nix manager's lockFileMaintenance, which shells out to
+      #      `nix flake update`;
       #   2. the `nix flake lock` postUpgradeTask in renovate.json, which keeps
       #      flake.lock consistent with the tag pins the customManagers rewrite.
       # Same pattern as ak2k/nix-config's renovate.yml.
