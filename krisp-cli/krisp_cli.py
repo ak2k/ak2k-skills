@@ -140,19 +140,40 @@ fetch("{url}", {{
 
 
 def _discover_oauth() -> dict:
-    """Discover OAuth endpoints via RFC 9470 + RFC 8414."""
+    """Discover OAuth endpoints via RFC 9470 + RFC 8414.
+
+    Two hops, either of which can fail against an unreachable host. Both raise
+    ClickException naming the URL that did not answer rather than letting the
+    transport error propagate: `auth` and the refresh path both begin here, so
+    that URL is the only useful thing to say.
+    """
     base = MCP_URL.rsplit("/mcp", 1)[0]
+    prm_url = f"{base}/.well-known/oauth-protected-resource"
     with httpx.Client() as c:
-        r = c.get(f"{base}/.well-known/oauth-protected-resource")
-        r.raise_for_status()
-        res = r.json()
+        try:
+            r = c.get(prm_url)
+            r.raise_for_status()
+            res = r.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise click.ClickException(
+                f"could not read OAuth metadata from {prm_url}: {exc}"
+            ) from exc
         if "error" in res:
             raise click.ClickException(f"OAuth discovery failed: {res}")
-        auth_server = res["authorization_servers"][0]
+        try:
+            auth_server = res["authorization_servers"][0]
+        except (LookupError, TypeError) as exc:
+            raise click.ClickException(f"{prm_url} names no authorization server") from exc
 
-        r = c.get(f"{auth_server}/.well-known/oauth-authorization-server")
-        r.raise_for_status()
-        meta: dict = r.json()
+        as_url = f"{auth_server}/.well-known/oauth-authorization-server"
+        try:
+            r = c.get(as_url)
+            r.raise_for_status()
+            meta: dict = r.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise click.ClickException(
+                f"could not read OAuth metadata from {as_url}: {exc}"
+            ) from exc
         if "error" in meta:
             raise click.ClickException(f"OAuth discovery failed: {meta}")
 
@@ -219,11 +240,16 @@ def _exchange_token(meta: dict, token_data_req: dict) -> dict:
 
 
 def _refresh_token(token_data: dict) -> dict | None:
-    """Refresh an expired access token."""
+    """Refresh an expired access token.
+
+    None means the grant is spent and the caller should re-authenticate. An
+    unreachable OAuth host raises instead, because that is not a spent grant:
+    _get_token answers None with "Run: krisp-cli auth", and `auth` opens with
+    the very request that just failed.
+    """
     client = _load_json(CLIENT_PATH)
     if not client or not token_data.get("refresh_token"):
         return None
-    meta = _discover_oauth()
     refresh_data = {
         "grant_type": "refresh_token",
         "refresh_token": token_data["refresh_token"],
@@ -232,9 +258,15 @@ def _refresh_token(token_data: dict) -> dict | None:
     if client.get("client_secret"):
         refresh_data["client_secret"] = client["client_secret"]
 
+    meta = _discover_oauth()
+
+    # Past discovery the endpoints are known good, so a refusal here is about
+    # the grant: a declined refresh token, a response without the fields it
+    # promises, or a browser fallback that came back empty. That is the case
+    # the re-auth prompt exists for.
     try:
         new_data = _exchange_token(meta, refresh_data)
-    except Exception:
+    except (httpx.HTTPError, LookupError, ValueError):
         return None
 
     if new_data and "access_token" in new_data:

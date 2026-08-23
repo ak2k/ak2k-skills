@@ -30,7 +30,7 @@ import argparse
 import json
 import re
 import sys
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -63,14 +63,16 @@ def load_snapshot() -> tuple[dict[str, dict], list[str]]:
     """Read the committed schema snapshot. Returns (tools, problems)."""
     if not SNAPSHOT.exists():
         return {}, [
-            f"{SNAPSHOT.name} is missing — run "
-            "`./validate_skill_doc.py --refresh` with an authenticated CLI"
+            (
+                f"{SNAPSHOT.name} is missing — run "
+                "`./validate_skill_doc.py --refresh` with an authenticated CLI"
+            )
         ]
     data = json.loads(SNAPSHOT.read_text())
     problems: list[str] = []
     captured = data.get("captured", "")
     try:
-        age = (date.today() - date.fromisoformat(captured)).days
+        age = (datetime.now(UTC).date() - date.fromisoformat(captured)).days
     except ValueError:
         problems.append(f"{SNAPSHOT.name}: unreadable 'captured' date {captured!r}")
     else:
@@ -113,8 +115,11 @@ def load_tools() -> dict[str, dict]:
         # Resolve the nix-wrapped install rather than requiring a venv.
         import subprocess
 
+        # check=False is intentional - `command -v` exits non-zero when the CLI
+        # is absent, and the empty stdout is handled below with a better message
+        # than a traceback.
         which = subprocess.run(
-            ["sh", "-c", "command -v atlassian-cli"], capture_output=True, text=True
+            ["sh", "-c", "command -v atlassian-cli"], capture_output=True, text=True, check=False
         ).stdout.strip()
         if not which:
             sys.exit("atlassian-cli not on PATH — install it or run inside its env")
@@ -302,7 +307,7 @@ def main() -> int:
         tools = load_tools()
         source = "live schema"
         if args.refresh:
-            write_snapshot(tools, date.today())
+            write_snapshot(tools, datetime.now(UTC).date())
             print(f"refreshed {SNAPSHOT.name} ({len(tools)} tools)")
     else:
         tools, problems = load_snapshot()

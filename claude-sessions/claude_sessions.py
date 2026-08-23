@@ -23,7 +23,7 @@ def parse_timestamp(ts: object) -> datetime | None:
         return datetime.fromtimestamp(ts / 1000, tz=UTC)
     if isinstance(ts, str):
         try:
-            return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            return datetime.fromisoformat(ts)
         except ValueError:
             return None
     return None
