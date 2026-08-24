@@ -1,6 +1,7 @@
 """Regression tests for validate_skill_doc.py.
 
-Run with pytest or `python -m unittest discover`. Plain asserts and stdlib
+Run with pytest; the nix build runs them via pytestCheckHook. Bare test
+functions, so `unittest discover` collects nothing. Plain asserts and stdlib
 only — matching kagi/tests, and keeping pytest out of the treefmt mypy env.
 
 Every case here is a defect that shipped and was found only by adversarial
@@ -12,6 +13,9 @@ up, so each finding gets a test that fails against the old behaviour.
 from __future__ import annotations
 
 import importlib.util
+import json
+import tempfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 SRC = Path(__file__).resolve().parent.parent / "validate_skill_doc.py"
@@ -156,6 +160,49 @@ def test_snapshot_exists_and_is_current():
     tools, problems = vsd.load_snapshot()
     assert problems == [], problems
     assert len(tools) > 20, "snapshot looks truncated"
+
+
+def _load_snapshot_from(payload):
+    """Run load_snapshot against a throwaway snapshot file.
+
+    Unannotated on purpose: `vsd` is loaded by path, so mypy sees a bare
+    ModuleType and rejects every attribute on it inside a checked body."""
+    with tempfile.TemporaryDirectory() as td:
+        snap = Path(td) / "mcp-schemas.json"
+        snap.write_text(json.dumps(payload))
+        orig = vsd.SNAPSHOT
+        vsd.SNAPSHOT = snap
+        try:
+            return vsd.load_snapshot()
+        finally:
+            vsd.SNAPSHOT = orig
+
+
+def test_stale_snapshot_is_reported():
+    """Age is the only thing keeping this check honest: past the limit the
+    snapshot is validating SKILL.md against a server that has moved on, so it
+    has to surface as a problem rather than pass quietly."""
+    stale = datetime.now(UTC).date() - timedelta(days=vsd.SNAPSHOT_MAX_AGE_DAYS + 1)
+    tools, problems = _load_snapshot_from(
+        {"captured": stale.isoformat(), "tools": {"getJiraIssue": {}}}
+    )
+    assert tools == {"getJiraIssue": {}}
+    assert problems and "days ago" in problems[0], problems
+
+
+def test_fresh_snapshot_reports_nothing():
+    """The other side of the boundary — proves the staleness test above fails
+    for the right reason and not because load_snapshot always complains."""
+    fresh = datetime.now(UTC).date() - timedelta(days=1)
+    _tools, problems = _load_snapshot_from({"captured": fresh.isoformat(), "tools": {}})
+    assert problems == [], problems
+
+
+def test_unreadable_captured_date_is_reported():
+    """A snapshot whose `captured` cannot be parsed must not skip the age gate
+    silently — that would be an un-aging snapshot."""
+    _tools, problems = _load_snapshot_from({"captured": "not-a-date", "tools": {}})
+    assert problems and "unreadable" in problems[0], problems
 
 
 def test_snapshot_covers_every_documented_example():

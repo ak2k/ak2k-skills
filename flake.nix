@@ -261,6 +261,40 @@
               '';
             }
             // {
+              # The python suites, run in the repo layout they assume.
+              #
+              # NOT per-package `pytestCheckHook`: each package's `src` is its
+              # own directory, and test_validate_skill_doc reaches up to
+              # ../skills/atlassian-cli/SKILL.md — the shipped doc it validates
+              # lives outside the package it belongs to. Copying the trees here
+              # is the same trick skill-doc-atlassian-cli below plays, and it
+              # keeps every suite under one runner.
+              #
+              # Without this the tests are inert: they are bare pytest
+              # functions, so `unittest discover` collects zero of them, and
+              # nothing else in the flake ever invoked pytest.
+              python-tests =
+                let
+                  py = pkgs.python3.withPackages (ps: [
+                    ps.pytest
+                    ps.click
+                    ps.httpx
+                  ]);
+                in
+                pkgs.runCommand "python-tests" { } ''
+                  cp -r ${./atlassian-cli} atlassian-cli
+                  cp -r ${./claude-sessions} claude-sessions
+                  cp -r ${./krisp-cli} krisp-cli
+                  cp -r ${./skills} skills
+                  chmod -R u+w atlassian-cli claude-sessions krisp-cli skills
+                  for d in atlassian-cli claude-sessions krisp-cli; do
+                    echo "== $d =="
+                    (cd "$d" && ${py}/bin/pytest tests -q)
+                  done
+                  touch $out
+                '';
+            }
+            // {
               # Drift guard: Renovate manages the `inputs.msgvault.url` tag and
               # the `msgvaultVersion` literal in lockstep via one custom-manager
               # entry. If they somehow desynchronise, the binary's reported
