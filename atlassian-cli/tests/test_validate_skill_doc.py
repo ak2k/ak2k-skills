@@ -198,6 +198,22 @@ def test_fresh_snapshot_reports_nothing():
     assert problems == [], problems
 
 
+def test_snapshot_at_exactly_the_age_limit_is_accepted():
+    """Pins the comparison as `>` and not `>=`, so a refresh cadence set to
+    exactly SNAPSHOT_MAX_AGE_DAYS does not flap between pass and fail."""
+    edge = datetime.now(UTC).date() - timedelta(days=vsd.SNAPSHOT_MAX_AGE_DAYS)
+    _tools, problems = _load_snapshot_from({"captured": edge.isoformat(), "tools": {}})
+    assert problems == [], problems
+
+
+def test_future_dated_snapshot_is_reported():
+    """A future `captured` yields a negative age, which sails under the limit
+    forever — the one thing keeping this check honest would never fire."""
+    ahead = datetime.now(UTC).date() + timedelta(days=3)
+    _tools, problems = _load_snapshot_from({"captured": ahead.isoformat(), "tools": {}})
+    assert problems and "future" in problems[0], problems
+
+
 def test_unreadable_captured_date_is_reported():
     """A snapshot whose `captured` cannot be parsed must not skip the age gate
     silently — that would be an un-aging snapshot."""
