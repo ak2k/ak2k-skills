@@ -273,21 +273,26 @@
               # Without this the tests are inert: they are bare pytest
               # functions, so `unittest discover` collects zero of them, and
               # nothing else in the flake ever invoked pytest.
+              #
+              # kagi is here too: its suite imports the package, which pulls in
+              # beautifulsoup4, so the runner env carries it.
               python-tests =
                 let
                   py = pkgs.python3.withPackages (ps: [
                     ps.pytest
                     ps.click
                     ps.httpx
+                    ps.beautifulsoup4
                   ]);
                 in
                 pkgs.runCommand "python-tests" { } ''
                   cp -r ${./atlassian-cli} atlassian-cli
                   cp -r ${./claude-sessions} claude-sessions
                   cp -r ${./krisp-cli} krisp-cli
+                  cp -r ${./kagi} kagi
                   cp -r ${./skills} skills
-                  chmod -R u+w atlassian-cli claude-sessions krisp-cli skills
-                  for d in atlassian-cli claude-sessions krisp-cli; do
+                  chmod -R u+w atlassian-cli claude-sessions krisp-cli kagi skills
+                  for d in atlassian-cli claude-sessions krisp-cli kagi; do
                     echo "== $d =="
                     (cd "$d" && ${py}/bin/pytest tests -q)
                   done

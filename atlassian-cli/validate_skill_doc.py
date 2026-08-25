@@ -76,7 +76,15 @@ def load_snapshot() -> tuple[dict[str, dict], list[str]]:
     except ValueError:
         problems.append(f"{SNAPSHOT.name}: unreadable 'captured' date {captured!r}")
     else:
-        if age > SNAPSHOT_MAX_AGE_DAYS:
+        if age < 0:
+            # Negative age passes the limit below forever, so a clock skew or a
+            # hand-edited date would retire the staleness gate silently.
+            problems.append(
+                f"{SNAPSHOT.name} is dated {-age} day(s) in the future "
+                f"({captured!r}) — re-run with --refresh; a future date can "
+                "never go stale, so the age check would stop meaning anything"
+            )
+        elif age > SNAPSHOT_MAX_AGE_DAYS:
             problems.append(
                 f"{SNAPSHOT.name} was captured {age} days ago (limit "
                 f"{SNAPSHOT_MAX_AGE_DAYS}) — re-run with --refresh so this "

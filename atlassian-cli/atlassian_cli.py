@@ -26,6 +26,7 @@ Cloudflare-fronted, so direct POSTs may get challenge-page'd on some networks.
 import base64
 import hashlib
 import json
+import math
 import secrets
 import time
 import webbrowser
@@ -273,10 +274,36 @@ def _refresh_token(token_data: dict) -> dict | None:
     except (httpx.HTTPError, LookupError, ValueError):
         return None
 
-    if new_data and "access_token" in new_data:
+    # isinstance, not `"access_token" in new_data`: a scalar JSON body makes
+    # that a substring test, so a response of `"access_token"` would pass it and
+    # hand _get_token a str it crashes indexing.
+    if isinstance(new_data, dict) and isinstance(new_data.get("access_token"), str):
         if "expires_in" in new_data:
-            new_data["expires_at"] = time.time() + new_data["expires_in"] - 60
-        _save_json(TOKEN_PATH, new_data)
+            # A server that lies about expires_in has still given us a usable
+            # token, so record no expiry rather than discarding the grant:
+            # _get_token reads a missing expires_at as due-for-refresh, costing
+            # one extra refresh per command until the server behaves. Rejecting
+            # would force interactive re-auth over a token that works.
+            try:
+                expires_at = time.time() + float(new_data["expires_in"]) - 60
+            except (TypeError, ValueError, OverflowError):
+                new_data.pop("expires_at", None)
+            else:
+                # inf and NaN survive the arithmetic, and inf would be stamped
+                # as a token that never expires.
+                if math.isfinite(expires_at):
+                    new_data["expires_at"] = expires_at
+                else:
+                    new_data.pop("expires_at", None)
+        try:
+            _save_json(TOKEN_PATH, new_data)
+        except OSError as exc:
+            # Environmental, not a spent grant, so it raises for the same
+            # reason discovery does: answering None would send the user to
+            # `auth`, which ends in this very write.
+            raise click.ClickException(
+                f"could not persist refreshed token to {TOKEN_PATH}: {exc}"
+            ) from exc
         return new_data
     return None
 
