@@ -25,7 +25,7 @@ buildGoLatestModule {
 
   # Renovate refreshes this on every msgvault bump by running
   # `nix run .#msgvault-vendor-hash` (see renovate.json).
-  vendorHash = "sha256-Q3G+zaFET0SQMXv88rZpudFLcVDYYnz39+pqpcorf04=";
+  vendorHash = "sha256-IwbOjkcaZuwf1QcHxVU3paZckSYZPG/5NUMXY1J0ZVc=";
   proxyVendor = true;
 
   subPackages = [ "cmd/msgvault" ];
