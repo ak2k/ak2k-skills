@@ -5,30 +5,81 @@
 # tag tree that `inputs.msgvault` pins. `src` stays a flake input rather than a
 # fetcher because consumers gate on it: ak2k/nix-config holds every msgvault
 # bump for a human by comparing `nodes.msgvault` across its flake.lock.
-#
-# The web UI is not built. Its assets need a bun2nix lock regenerated whenever
-# the frontend's dependencies change, so the binary serves the embedded
-# stub.html instead.
 {
   lib,
+  stdenvNoCC,
   buildGoLatestModule,
+  bun,
+  nodejs,
   sqlite,
   src,
   version,
 }:
 
+let
+  # Renovate refreshes both hashes on every msgvault bump by running
+  # `nix run .#msgvault-update-hashes` (see renovate.json).
+  webHash = "sha256-gcPuEki9kBiB17X0iIXhi30bcrcIG8mvizHv27CPOBg=";
+  vendorHash = "sha256-IwbOjkcaZuwf1QcHxVU3paZckSYZPG/5NUMXY1J0ZVc=";
+
+  # The web UI that `msgvault serve` embeds; without it the binary carries
+  # only a stub and answers 404 at `/`. Fixed-output so bun can fetch from
+  # the npm registry. The built assets are platform-independent, so one hash
+  # covers every system.
+  web = stdenvNoCC.mkDerivation {
+    pname = "msgvault-web";
+    inherit src version;
+
+    nativeBuildInputs = [
+      bun
+      nodejs
+    ];
+
+    dontConfigure = true;
+    # Fixup would rewrite files in $out, and a fixed-output path may not
+    # reference the store.
+    dontFixup = true;
+
+    # The same steps as upstream's `make web-embed`, including its check that
+    # nothing hidden or credential-shaped reaches the embedded tree.
+    buildPhase = ''
+      runHook preBuild
+      export HOME=$TMPDIR
+      pushd web
+      bun install --frozen-lockfile --no-progress
+      # Vite's bin uses `#!/usr/bin/env node`, which the Linux sandbox lacks.
+      patchShebangs node_modules
+      bun run generate
+      bun run build
+      popd
+      find internal/web/dist -mindepth 1 -maxdepth 1 ! -name stub.html -exec rm -rf {} +
+      cp -R web/dist/. internal/web/dist/
+      node scripts/check-web-assets.mjs
+      runHook postBuild
+    '';
+
+    installPhase = ''
+      cp -R internal/web/dist $out
+    '';
+
+    outputHashMode = "recursive";
+    outputHash = webHash;
+  };
+in
 # Upstream raises its go.mod floor ahead of nixpkgs' default Go (0.20.0 needs
 # 1.27.0 while `go` is 1.26).
 buildGoLatestModule {
   pname = "msgvault";
-  inherit src version;
-
-  # Renovate refreshes this on every msgvault bump by running
-  # `nix run .#msgvault-vendor-hash` (see renovate.json).
-  vendorHash = "sha256-IwbOjkcaZuwf1QcHxVU3paZckSYZPG/5NUMXY1J0ZVc=";
+  inherit src version vendorHash;
   proxyVendor = true;
 
   subPackages = [ "cmd/msgvault" ];
+
+  preBuild = ''
+    cp -R ${web}/. internal/web/dist/
+  '';
+  # The module download needs no web assets.
+  overrideModAttrs = _: { preBuild = ""; };
 
   # go-sqlite3, duckdb-go and sqlite-vec-go-bindings all link C code.
   env.CGO_ENABLED = 1;
@@ -55,6 +106,8 @@ buildGoLatestModule {
     mkdir -p $out/share/skills/msgvault-query
     cp -r ${src}/skills/claude-code/. $out/share/skills/msgvault-query/
   '';
+
+  passthru = { inherit web; };
 
   meta = {
     description = "Local email and chat archive with analytics and search";

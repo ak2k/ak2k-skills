@@ -78,7 +78,7 @@ jobs:
           # these regexes, and this is admin-only config — it must live here as
           # env, NOT in renovate.json, which would be ignored. Matched against
           # the final resolved command, hence the anchors.
-          RENOVATE_ALLOWED_COMMANDS: '["^nix flake lock$", "^nix run \\.#msgvault-vendor-hash$"]'
+          RENOVATE_ALLOWED_COMMANDS: '["^nix flake lock$", "^nix run \\.#msgvault-update-hashes$"]'
         # --inputs-from . so renovate resolves against this repo's pinned
         # nixpkgs and substitutes from cache instead of drifting per run.
         run: nix shell --inputs-from . nixpkgs#renovate -c renovate

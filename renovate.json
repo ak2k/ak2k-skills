@@ -67,8 +67,8 @@
     },
     {
       "description": [
-        "Replaces the top-level postUpgradeTasks for msgvault branches only: msgvault is built from source by ./msgvault, and a tag bump usually changes go.sum, so its vendorHash must be recomputed or every runner fails on a fixed-output hash mismatch.",
-        "The hash refresh builds the Go module cache, so it is scoped here rather than run on every Renovate branch."
+        "Replaces the top-level postUpgradeTasks for msgvault branches only: msgvault is built from source by ./msgvault, whose web assets and Go module cache are fixed-output derivations. A tag bump changes both, so their hashes must be recomputed or every runner fails on a hash mismatch.",
+        "The refresh builds the web assets and the Go module cache, so it is scoped here rather than run on every Renovate branch."
       ],
       "matchDepNames": [
         "kenn-io/msgvault"
@@ -79,7 +79,7 @@
       "postUpgradeTasks": {
         "commands": [
           "nix flake lock",
-          "nix run .#msgvault-vendor-hash"
+          "nix run .#msgvault-update-hashes"
         ],
         "fileFilters": [
           "flake.lock",
