@@ -196,14 +196,14 @@
           };
 
           # Renovate's post-upgrade task for msgvault bumps; see renovate.json.
-          apps.msgvault-vendor-hash = {
+          apps.msgvault-update-hashes = {
             type = "app";
             program = lib.getExe (
-              pkgs.writers.writePython3Bin "msgvault-vendor-hash" { } (
-                builtins.readFile ./msgvault/update_vendor_hash.py
+              pkgs.writers.writePython3Bin "msgvault-update-hashes" { } (
+                builtins.readFile ./msgvault/update_hashes.py
               )
             );
-            meta.description = "Refresh msgvault's vendorHash after a tag bump";
+            meta.description = "Refresh msgvault's web and Go module hashes after a tag bump";
           };
 
           # Debug handle. Inspect with:
