@@ -14,15 +14,14 @@
 
     # msgvault — local email/chat archive (Gmail, IMAP, WhatsApp, MBOX,
     # Apple Mail) with DuckDB analytics + FTS5 + optional vector search +
-    # MCP server. Upstream flake ships the binary and one Claude Code skill;
-    # we re-export with a corrected Version ldflag (upstream hardcodes
-    # "nix-dev") and copy the skill tree into $out/share/skills/msgvault-query/
-    # so it flows through the uniform registry like every other skill.
+    # MCP server. Source only: upstream ships no flake, so ./msgvault builds
+    # the tag tree and ships its Claude Code skill as msgvault-query.
     #
     # NOTE: `msgvaultVersion` below must match the tag in this URL. Both are
     # tracked by one Renovate custom-manager entry, and the
     # `msgvault-version-matches` flake check fails the build on drift.
-    msgvault.url = "github:wesm/msgvault/v0.19.3";
+    msgvault.url = "github:kenn-io/msgvault/v0.19.3";
+    msgvault.flake = false;
 
     # Atlassian's official Remote MCP server repo — we don't need the server
     # itself (our atlassian-cli wraps it remotely), but the repo ships 5
@@ -124,11 +123,6 @@
           ...
         }:
         let
-          # Override upstream's package to (a) report the real version via
-          # `msgvault --version` rather than "nix-dev", (b) correct the
-          # derivation name (upstream's flake.nix at tag v0.14.0 still carries
-          # a stale `version = "0.13.1"` literal), (c) ship the Claude Code
-          # skill under $out/share/skills/msgvault-query/ for the registry.
           # officecli's agent skills ship EMBEDDED in the .NET binary (upstream
           # CI keeps them byte-identical to the repo copies), and `officecli
           # skills claude` is pure local extraction — no network. Extracting at
@@ -177,35 +171,10 @@
                 install -Dm444 SKILL.md $out/share/skills/officecli/SKILL.md
               '';
 
-          msgvaultPkg = inputs.msgvault.packages.${system}.default.overrideAttrs (old: {
-            # We're intentionally replacing upstream's stale `version = "0.13.1"`
-            # with the real tag; silence nixpkgs's warning about version bumps.
-            __intentionallyOverridingVersion = true;
+          msgvaultPkg = pkgs.callPackage ./msgvault {
+            src = inputs.msgvault;
             version = msgvaultVersion;
-            name = "msgvault-${msgvaultVersion}";
-            # Both module paths are stamped on purpose. Upstream renamed the Go
-            # module `github.com/wesm/msgvault` -> `go.kenn.io/msgvault` in
-            # wesm/msgvault#336 (shipped in 0.15.0), so the symbol this `-X`
-            # targets depends on which tag `inputs.msgvault` points at. The Go
-            # linker SILENTLY IGNORES a `-X` naming a symbol that does not
-            # exist, so listing both is safe at every tag and self-healing
-            # across the rename — whichever one resolves wins, the other is a
-            # no-op. Listing only one is what broke the v0.19.3 bump (#56): the
-            # stale github.com/... path matched nothing, and because this
-            # attribute REPLACES upstream's ldflags wholesale it also discarded
-            # upstream's own correct `-X go.kenn.io/...`, so the binary fell
-            # back to its compiled-in default and reported `msgvault dev`.
-            # Nothing was red at build time — only the msgvault-version-matches
-            # drift check below caught it.
-            ldflags = [
-              "-X github.com/wesm/msgvault/cmd/msgvault/cmd.Version=v${msgvaultVersion}"
-              "-X go.kenn.io/msgvault/cmd/msgvault/cmd.Version=v${msgvaultVersion}"
-            ];
-            postInstall = (old.postInstall or "") + ''
-              mkdir -p $out/share/skills/msgvault-query
-              cp -r ${inputs.msgvault}/skills/claude-code/. $out/share/skills/msgvault-query/
-            '';
-          });
+          };
         in
         {
           packages = {
@@ -224,6 +193,17 @@
             officecli = inputs.llm-agents.packages.${system}.officecli;
             officecli-skill = officecliSkill;
             pplx-agent-tools = inputs.pplx-agent-tools.packages.${system}.default;
+          };
+
+          # Renovate's post-upgrade task for msgvault bumps; see renovate.json.
+          apps.msgvault-vendor-hash = {
+            type = "app";
+            program = lib.getExe (
+              pkgs.writers.writePython3Bin "msgvault-vendor-hash" { } (
+                builtins.readFile ./msgvault/update_vendor_hash.py
+              )
+            );
+            meta.description = "Refresh msgvault's vendorHash after a tag bump";
           };
 
           # Debug handle. Inspect with:
@@ -352,6 +332,7 @@
                   httpx
                 ];
               };
+              "msgvault" = { };
             };
 
             settings.global.excludes = [
