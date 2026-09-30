@@ -60,7 +60,9 @@
     # this repo's `skills/surefetch/`. Private repo — resolved via the same GitHub token nix
     # uses for the other ak2k inputs. NOT `follows`-pinned to our nixpkgs: surefetch's uv2nix
     # closure pins its own, and overriding it risks the C-extension build.
-    surefetch.url = "github:ak2k/surefetch";
+    # Pinned by commit so Renovate opens a digest PR on each upstream merge; a bare branch URL
+    # only moves in the weekly lock-file maintenance.
+    surefetch.url = "github:ak2k/surefetch/c6a2d0449efa850b671cb5e66b17aa5809999220";
   };
 
   outputs =
