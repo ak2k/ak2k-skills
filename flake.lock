@@ -444,11 +444,11 @@
         "uv2nix": "uv2nix_2"
       },
       "locked": {
-        "lastModified": 1783490786,
-        "narHash": "sha256-sw69mIkCTdsLBvUMwpRf1zPjlFeQVKojFUSb2meAMVQ=",
+        "lastModified": 1790734244,
+        "narHash": "sha256-sR7P4PMIFeaCbSWtCJ3NBL5W05rL/7SWMtedFvS/ZK0=",
         "owner": "ak2k",
         "repo": "surefetch",
-        "rev": "6d88c5693284392755451026eae3b5436cce19d0",
+        "rev": "c6a2d0449efa850b671cb5e66b17aa5809999220",
         "type": "github"
       },
       "original": {
