@@ -189,16 +189,16 @@
     "msgvault": {
       "flake": false,
       "locked": {
-        "lastModified": 1790083540,
-        "narHash": "sha256-bCpbax9JbsH7tZPwYN8WB/qVFGKb1rMKvgb+jqBsOgk=",
+        "lastModified": 1790976441,
+        "narHash": "sha256-Bici+SEEgCygqWuWcQLaQNWh6hgKO13xJTRsV3d6hvM=",
         "owner": "kenn-io",
         "repo": "msgvault",
-        "rev": "a36a394122b6880e41ec042870537573f64e2afa",
+        "rev": "598ca5cc89042ded95e484b5315cc29b9342fa42",
         "type": "github"
       },
       "original": {
         "owner": "kenn-io",
-        "ref": "v0.20.0",
+        "ref": "v0.21.0",
         "repo": "msgvault",
         "type": "github"
       }
