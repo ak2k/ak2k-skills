@@ -17,21 +17,17 @@
 let
   sysPkgs = self.packages.${system};
 
-  # gws bundle: every subdir of the upstream skills/ tree with a SKILL.md
-  # becomes one registry entry pointing at the same `gws` binary.
+  # gws bundle: each top-level skill in the transformed tree becomes one
+  # registry entry pointing at the same `gws` binary. `source` resolves to the
+  # gws-skills package output (verb-helpers nested under references/), not the
+  # raw upstream tree. nix/gws.nix decides which names stay top-level.
   gwsSkillsDir = "${inputs.googleworkspace-cli}/skills";
-  gwsEntries =
-    lib.mapAttrs
-      (name: _: {
-        source = "${gwsSkillsDir}/${name}";
-        package = sysPkgs.gws;
-        bundle = "gws";
-      })
-      (
-        lib.filterAttrs (
-          name: type: type == "directory" && builtins.pathExists "${gwsSkillsDir}/${name}/SKILL.md"
-        ) (builtins.readDir gwsSkillsDir)
-      );
+  gwsSkills = import ./gws.nix { inherit lib gwsSkillsDir; };
+  gwsEntries = lib.genAttrs gwsSkills.topLevel (name: {
+    source = "${sysPkgs.gws-skills}/share/skills/${name}";
+    package = sysPkgs.gws;
+    bundle = "gws";
+  });
 
   # Skills whose files ship inside our own package outputs.
   ownEntries = {

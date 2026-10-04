@@ -1,0 +1,190 @@
+{
+  "gws-admin-reports": {
+    "description": "Admin Reports: lists, watches, and stops audit-log streams; gets customer and user usage reports. Use for login audits, admin actions, or domain usage stats.",
+    "verb_coverage": {
+      "activities.list": "lists ... audit-log streams",
+      "activities.watch": "watches",
+      "channels.stop": "stops",
+      "customerUsageReports.get": "gets customer ... usage reports",
+      "entityUsageReports.get": "domain usage stats",
+      "userUsageReport.get": "user usage reports"
+    },
+    "rationale": "Leads with audit-log and usage-report nouns plus the CRUD verbs (list/watch/stop/get), using admin-specific triggers (login audits, admin actions, domain stats) that don't collide with gws-events subscriptions.",
+    "locked": false
+  },
+  "gws-calendar": {
+    "description": "Google Calendar: shows agenda, creates, updates, deletes, and moves events; checks free/busy. Use for scheduling meetings, editing appointments, or checking availability.",
+    "verb_coverage": {
+      "agenda": "shows agenda",
+      "insert": "creates ... events"
+    },
+    "rationale": "Leads with calendar/agenda/event nouns and concrete CRUD verbs plus free/busy availability, distinct from Meet rooms and Tasks to-dos.",
+    "locked": false
+  },
+  "gws-chat": {
+    "description": "Google Chat: sends, reads, and searches Chat-space messages, DMs, and threads; creates, lists, updates, deletes spaces; manages members. Use for Chat — not email.",
+    "verb_coverage": {
+      "send": "sends"
+    },
+    "rationale": "Leads with distinctive Chat-space/DM/thread nouns and the required send verb, covers space CRUD and member management, and draws the boundary against Gmail.",
+    "locked": false
+  },
+  "gws-classroom": {
+    "description": "Google Classroom: creates, updates, deletes courses; enrolls students/teachers; sets coursework, grades, topics, announcements. Use for class rosters or assignments.",
+    "verb_coverage": {},
+    "rationale": "Leads with distinctive Classroom nouns (courses, rosters, coursework, grades) and names the full CRUD plus enrollment surface; no helper-shortcut verbs were required.",
+    "locked": false
+  },
+  "gws-docs": {
+    "description": "Google Docs: creates, reads, writes, edits, appends, and batch-updates Doc documents. Use for drafting or updating Doc text — not Sheets, Slides, or Forms.",
+    "verb_coverage": {
+      "write": "writes"
+    },
+    "rationale": "Leads with the distinctive \"Doc documents\" noun and concrete CRUD verbs (create/read/edit/append/batch-update) plus the required \"write\", while explicitly excluding sibling Sheets/Slides/Forms.",
+    "locked": false
+  },
+  "gws-drive": {
+    "description": "Google Drive: uploads, downloads, copies, moves, shares, deletes files, folders, shared drives; sets permissions, comments, revisions. Use for Drive storage, folders, or sharing.",
+    "verb_coverage": {
+      "upload": "uploads"
+    },
+    "rationale": "Leads with distinctive Drive nouns (files, folders, shared drives) and concrete CRUD verbs plus permissions/comments/revisions, covering the required upload verb while staying under 180 chars and distinct from Docs/Sheets/Slides.",
+    "locked": false
+  },
+  "gws-events": {
+    "description": "Workspace Events: subscribes to, renews, reactivates, lists, and deletes Calendar/Chat/Drive change subscriptions. Use to watch for changes or revive a suspended subscription.",
+    "verb_coverage": {
+      "renew": "renews",
+      "subscribe": "subscribes to"
+    },
+    "rationale": "Leads with the distinctive \"event subscriptions / watch for changes\" boundary so it fires on subscription management rather than colliding with the calendar/chat/drive resource skills, while covering create/list/delete/reactivate CRUD.",
+    "locked": false
+  },
+  "gws-forms": {
+    "description": "Google Forms: creates, reads, edits, and publishes surveys and quizzes; retrieves form responses and sets response watches. Use for building or reading form submissions.",
+    "verb_coverage": {
+      "forms.create": "creates",
+      "forms.get": "reads",
+      "forms.batchUpdate": "edits",
+      "forms.setPublishSettings": "publishes",
+      "forms.responses": "retrieves form responses",
+      "forms.watches": "sets response watches"
+    },
+    "rationale": "Leads with distinctive Forms nouns (surveys, quizzes, form responses) and names every API method's CRUD verb while staying under 180 characters and distinct from Sheets/Docs.",
+    "locked": false
+  },
+  "gws-gmail": {
+    "description": "Gmail: sends, reads, replies, reply-alls, forwards email; triages inbox, watches new mail; creates drafts, labels, threads. Use for composing, replying, or inbox — not Chat.",
+    "verb_coverage": {
+      "forward": "forwards",
+      "read": "reads",
+      "reply": "replies",
+      "reply-all": "reply-alls",
+      "send": "sends",
+      "triage": "triages inbox",
+      "watch": "watches new mail"
+    },
+    "rationale": "Front-loads the seven helper verbs plus draft/label/thread CRUD, leads with email-specific nouns, and disambiguates from gws-chat by excluding Chat messages.",
+    "locked": false
+  },
+  "gws-keep": {
+    "description": "Google Keep: creates, reads, lists, and deletes notes; downloads note attachments; adds and removes collaborators. Use for sticky notes, quick jottings, or sharing a note.",
+    "verb_coverage": {
+      "notes.create": "creates",
+      "notes.get": "reads",
+      "notes.list": "lists",
+      "notes.delete": "deletes",
+      "media.download": "downloads note attachments",
+      "notes.permissions": "adds and removes collaborators"
+    },
+    "rationale": "Leads with the distinctive Keep nouns (notes, sticky notes, jottings) and names every API method's CRUD verb plus attachments and collaborators, staying clear of Tasks' to-do/checklist territory.",
+    "locked": false
+  },
+  "gws-meet": {
+    "description": "Google Meet: creates, updates, and ends Meet spaces (meeting rooms); fetches conference recordings, transcripts, participants, and smart notes. Use for Meet rooms — not Calendar events.",
+    "verb_coverage": {
+      "spaces.create": "creates",
+      "spaces.patch": "updates",
+      "spaces.endActiveConference": "ends",
+      "spaces.get": "Meet spaces",
+      "conferenceRecords.recordings": "recordings",
+      "conferenceRecords.transcripts": "transcripts",
+      "conferenceRecords.participants": "participants",
+      "conferenceRecords.smartNotes": "smart notes",
+      "conferenceRecords.get": "conference",
+      "conferenceRecords.list": "conference"
+    },
+    "rationale": "Leads with Meet space CRUD and the distinctive recording/transcript/participant/smart-notes nouns, and explicitly disambiguates from Calendar events.",
+    "locked": false
+  },
+  "gws-modelarmor": {
+    "description": "Model Armor: creates, updates, deletes AI safety templates; sanitizes LLM prompts and filters model responses. Use for AI guardrails, content moderation, or prompt screening.",
+    "verb_coverage": {
+      "create-template": "creates ... AI safety templates",
+      "sanitize-prompt": "sanitizes LLM prompts",
+      "sanitize-response": "filters model responses"
+    },
+    "rationale": "Leads with Model Armor's distinctive safety-template CRUD plus prompt/response sanitization, and triggers on guardrail/moderation/screening intent without colliding with other gws services.",
+    "locked": false
+  },
+  "gws-people": {
+    "description": "Google Contacts: adds, finds, edits, deletes contacts and contact groups — phone numbers, emails, addresses; searches the directory. Use for contact details, not email.",
+    "verb_coverage": {},
+    "rationale": "Front-loads contact/contact-group CRUD plus directory search with the distinctive nouns (phone numbers, addresses) a real user types, while disambiguating from Gmail by noting \"contact details, not email.\"",
+    "locked": false
+  },
+  "gws-script": {
+    "description": "Apps Script: pushes .gs files, creates projects, runs functions, edits project code, manages deployments and versions. Use for Apps Script automation extending Sheets, Docs, or Gmail.",
+    "verb_coverage": {
+      "push": "pushes .gs files"
+    },
+    "rationale": "Leads with the distinctive \"Apps Script\"/\".gs files\" nouns and names create/run/edit-code/deploy/version CRUD plus the push helper, while the \"extending Sheets, Docs, Gmail\" boundary avoids colliding with those services.",
+    "locked": false
+  },
+  "gws-shared": {
+    "description": "gws-shared: internal library providing OAuth auth, --format/--dry-run/--sanitize flags, and output formatting for all gws-* skills. Not directly user-invoked.",
+    "verb_coverage": {},
+    "rationale": "Frames the skill as the internal shared dependency (auth, flags, formatting) with no user-facing nouns or verbs, signaling the model to route real requests to the specific gws-* service skills instead.",
+    "locked": false
+  },
+  "gws-sheets": {
+    "description": "Google Sheets: reads ranges, appends rows, edits cells, creates spreadsheets, and updates sheet tabs. Use for spreadsheet values, rows, cells, or tabs.",
+    "verb_coverage": {
+      "append": "appends rows",
+      "read": "reads ranges"
+    },
+    "rationale": "Leads with Sheets-specific nouns (ranges, rows, cells, spreadsheets, tabs) covering required append/read plus create and update CRUD, distinct from Docs/Slides.",
+    "locked": false
+  },
+  "gws-slides": {
+    "description": "Google Slides: creates, reads, edits, and batch-updates presentations, slides, text, and shapes. Use for slide decks or presentations — not Docs or Sheets.",
+    "verb_coverage": {
+      "presentations.create": "creates",
+      "presentations.get": "reads",
+      "presentations.pages": "slides",
+      "presentations.batchUpdate": "batch-updates"
+    },
+    "rationale": "Leads with distinctive deck/presentation/slide nouns and names all four API operations while drawing a clear boundary against Docs and Sheets.",
+    "locked": false
+  },
+  "gws-tasks": {
+    "description": "Google Tasks: creates, lists, completes, updates, deletes, moves, and clears to-dos and task lists. Use for checklists, marking items done, or reordering personal tasks.",
+    "verb_coverage": {
+      "tasks.insert/tasklists.insert": "creates",
+      "tasks.list/tasklists.list/tasks.get/tasklists.get": "lists",
+      "tasks.patch/tasks.update/tasklists.patch/tasklists.update (complete)": "completes / marking items done",
+      "tasks.patch/tasks.update/tasklists.patch/tasklists.update": "updates",
+      "tasks.delete/tasklists.delete": "deletes",
+      "tasks.move": "moves / reordering",
+      "tasks.clear": "clears"
+    },
+    "rationale": "Leads with the distinctive Tasks nouns (to-dos, task lists, checklists) and names every CRUD plus move/clear/complete operation while staying clear of Calendar or Keep triggers.",
+    "locked": false
+  },
+  "gws-workflow": {
+    "description": "Workspace cross-service workflows: standup report, meeting prep, weekly digest, email-to-task, Drive-to-Chat announce. Use when a task spans Gmail, Calendar, Tasks, Drive, or Chat.",
+    "verb_coverage": {},
+    "rationale": "Leads with the named multi-step workflows and the cross-service trigger condition so it fires only when a request genuinely spans Gmail, Calendar, Tasks, Drive, or Chat together, leaving single-service requests to their specific gws-* skill.",
+    "locked": false
+  }
+}
