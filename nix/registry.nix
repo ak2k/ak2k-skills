@@ -63,6 +63,16 @@ let
       source = "${sysPkgs.msgvault}/share/skills/msgvault-query";
       package = sysPkgs.msgvault;
     };
+    # Umbrella skill only — its body routes to the 10 specialized skills
+    # (pptx, word, excel, pitch-deck, financial-model, morph-ppt, ...) via
+    # `officecli load_skill <name>` at runtime, keeping the idle-context
+    # cost to one description (same reasoning as atlassian-cli's workflow
+    # nesting above). SKILL.md is extracted from the binary at build time
+    # (see officecliSkill in flake.nix), so it can't drift from the CLI.
+    officecli = {
+      source = "${sysPkgs.officecli-skill}/share/skills/officecli";
+      package = sysPkgs.officecli;
+    };
     pplx-agent-tools = {
       source = "${sysPkgs.pplx-agent-tools}/share/skills/pplx-agent-tools";
       package = sysPkgs.pplx-agent-tools;
@@ -71,6 +81,34 @@ let
     # tree directly — home-manager treats it the same as any other path.
     siplink = {
       source = ../skills/siplink;
+    };
+    # Docs-only: the CLIs these document ship from nix-config, not this flake.
+    # cloak-browser = the stealth wrapper (scripts/cloak-browser.py);
+    # agent-browser = general/authed browser automation (llm-agents binary).
+    cloak-browser = {
+      source = ../skills/cloak-browser;
+    };
+    agent-browser = {
+      source = ../skills/agent-browser;
+    };
+    # surefetch: CLI binary from its own flake input; SKILL.md from this repo's tree.
+    # `.browser` = the full ladder (core + the [browser] extra: camoufox render engine
+    # + in-process adblock). The camoufox rung auto-joins the default ladder and
+    # self-provisions its binary/filters on first walled fetch — no manual bootstrap.
+    # Expose ONLY bin/surefetch: the `.browser` output is a full venv whose bin/python3
+    # would collide with pplx-agent-tools' python3 in the merged home-manager profile.
+    # The surefetch script's shebang references the venv's python by absolute path (and it
+    # spawns camoufox via the Python API, not a PATH binary), so it still resolves its deps.
+    surefetch = {
+      source = ../skills/surefetch;
+      package =
+        let
+          pkgs = inputs.nixpkgs.legacyPackages.${system};
+        in
+        pkgs.runCommand "surefetch-cli" { } ''
+          mkdir -p $out/bin
+          ln -s ${inputs.surefetch.packages.${system}.browser}/bin/surefetch $out/bin/surefetch
+        '';
     };
   };
 in

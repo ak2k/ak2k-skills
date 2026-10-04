@@ -49,7 +49,7 @@ def get_session_token(config: dict[str, Any]) -> str:
     # Using shell=True is intentional - password_command comes from the user's
     # config file (matches context7-cli's get_api_key_from_command). Pipelines
     # like `pass show foo | head -1` are common for password-store setups.
-    result = subprocess.run(  # noqa: S602
+    result = subprocess.run(
         cmd,
         shell=True,
         capture_output=True,

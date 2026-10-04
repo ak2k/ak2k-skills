@@ -26,6 +26,7 @@ Cloudflare-fronted, so direct POSTs may get challenge-page'd on some networks.
 import base64
 import hashlib
 import json
+import math
 import secrets
 import time
 import webbrowser
@@ -164,11 +165,21 @@ def _discover_oauth() -> dict:
     host serves AS metadata directly under /.well-known/oauth-authorization-server,
     which contains everything we need: authorization_endpoint, token_endpoint,
     and registration_endpoint (DCR).
+
+    An unreachable or unreadable metadata host raises ClickException rather
+    than letting the transport error propagate: both callers - `auth` and the
+    refresh path - begin with this request, so the URL that did not answer is
+    the only useful thing to say.
     """
     with httpx.Client() as c:
-        r = c.get(AS_METADATA_URL)
-        r.raise_for_status()
-        meta: dict = r.json()
+        try:
+            r = c.get(AS_METADATA_URL)
+            r.raise_for_status()
+            meta: dict = r.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise click.ClickException(
+                f"could not read OAuth metadata from {AS_METADATA_URL}: {exc}"
+            ) from exc
         if "error" in meta:
             raise click.ClickException(f"OAuth discovery failed: {meta}")
         return meta
@@ -234,11 +245,16 @@ def _exchange_token(meta: dict, token_data_req: dict) -> dict:
 
 
 def _refresh_token(token_data: dict) -> dict | None:
-    """Refresh an expired access token."""
+    """Refresh an expired access token.
+
+    None means the grant is spent and the caller should re-authenticate. An
+    unreachable OAuth host raises instead, because that is not a spent grant:
+    _get_token answers None with "Run: atlassian-cli auth", and `auth` opens
+    with the very request that just failed.
+    """
     client = _load_json(CLIENT_PATH)
     if not client or not token_data.get("refresh_token"):
         return None
-    meta = _discover_oauth()
     refresh_data = {
         "grant_type": "refresh_token",
         "refresh_token": token_data["refresh_token"],
@@ -247,15 +263,47 @@ def _refresh_token(token_data: dict) -> dict | None:
     if client.get("client_secret"):
         refresh_data["client_secret"] = client["client_secret"]
 
+    meta = _discover_oauth()
+
+    # Past discovery the endpoints are known good, so a refusal here is about
+    # the grant: a declined refresh token, a response without the fields it
+    # promises, or a browser fallback that came back empty. That is the case
+    # the re-auth prompt exists for.
     try:
         new_data = _exchange_token(meta, refresh_data)
-    except Exception:
+    except (httpx.HTTPError, LookupError, ValueError):
         return None
 
-    if new_data and "access_token" in new_data:
+    # isinstance, not `"access_token" in new_data`: a scalar JSON body makes
+    # that a substring test, so a response of `"access_token"` would pass it and
+    # hand _get_token a str it crashes indexing.
+    if isinstance(new_data, dict) and isinstance(new_data.get("access_token"), str):
         if "expires_in" in new_data:
-            new_data["expires_at"] = time.time() + new_data["expires_in"] - 60
-        _save_json(TOKEN_PATH, new_data)
+            # A server that lies about expires_in has still given us a usable
+            # token, so record no expiry rather than discarding the grant:
+            # _get_token reads a missing expires_at as due-for-refresh, costing
+            # one extra refresh per command until the server behaves. Rejecting
+            # would force interactive re-auth over a token that works.
+            try:
+                expires_at = time.time() + float(new_data["expires_in"]) - 60
+            except (TypeError, ValueError, OverflowError):
+                new_data.pop("expires_at", None)
+            else:
+                # inf and NaN survive the arithmetic, and inf would be stamped
+                # as a token that never expires.
+                if math.isfinite(expires_at):
+                    new_data["expires_at"] = expires_at
+                else:
+                    new_data.pop("expires_at", None)
+        try:
+            _save_json(TOKEN_PATH, new_data)
+        except OSError as exc:
+            # Environmental, not a spent grant, so it raises for the same
+            # reason discovery does: answering None would send the user to
+            # `auth`, which ends in this very write.
+            raise click.ClickException(
+                f"could not persist refreshed token to {TOKEN_PATH}: {exc}"
+            ) from exc
         return new_data
     return None
 
@@ -451,11 +499,31 @@ def auth():
 
 
 @main.command()
-def tools():
-    """List available MCP tools (discovered dynamically)."""
+@click.argument("tool_name", required=False)
+@click.option(
+    "--schema",
+    is_flag=True,
+    help="Print the full input schema (parameters, types, required) as JSON.",
+)
+def tools(tool_name: str | None, schema: bool):
+    """List available MCP tools (discovered dynamically).
+
+    Pass TOOL_NAME to show just that tool; add --schema for its parameters:
+
+        atlassian-cli tools addCommentToJiraIssue --schema
+    """
     mcp = _mcp()
     try:
-        for tool in mcp.list_tools():
+        found = mcp.list_tools()
+        if tool_name:
+            found = [t for t in found if t["name"] == tool_name]
+            if not found:
+                raise SystemExit(f"no such tool: {tool_name}")
+        if schema:
+            out = {t["name"]: t.get("inputSchema", {}) for t in found}
+            click.echo(json.dumps(out[tool_name] if tool_name else out, indent=2))
+            return
+        for tool in found:
             name = tool["name"]
             desc = tool.get("description", "")
             click.echo(f"  {name:40s} {desc}")

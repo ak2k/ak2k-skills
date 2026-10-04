@@ -1,0 +1,350 @@
+#!/usr/bin/env python3
+"""Validate the examples in skills/atlassian-cli/SKILL.md against the MCP schema.
+
+The Atlassian Remote MCP is an evolving upstream: tool parameters get renamed
+and added without notice. A stale example (`query` where the server now wants
+`searchString`) only surfaces as a -32602 at the moment an agent tries to use
+it. This checks every documented invocation up front: the tool exists, each key
+is a real parameter, value shapes match, and required parameters are present.
+
+    ./validate_skill_doc.py            # offline, against the committed snapshot
+    ./validate_skill_doc.py --live     # against the live server (needs auth)
+    ./validate_skill_doc.py --refresh  # re-capture the snapshot from the server
+
+WHY A COMMITTED SNAPSHOT. `tools/list` is authenticated, so a live check cannot
+run in CI without parking a long-lived Atlassian OAuth token in repo secrets —
+a bad trade for linting a markdown file. Validating against a checked-in
+snapshot makes the check hermetic, so it runs on every PR, and turns upstream
+drift into a reviewable diff whenever someone runs --refresh.
+
+This snapshot is NOT a parameter reference for agents, and deliberately does
+not live under skills/. Agents ask the server directly
+(`atlassian-cli tools <name> --schema`), so a stale snapshot can only weaken
+this check — it can never feed an agent a wrong parameter. That asymmetry is
+the whole reason it's safe to commit one here but not in the skill.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from datetime import UTC, date, datetime
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+SKILL = REPO / "skills" / "atlassian-cli" / "SKILL.md"
+SNAPSHOT = Path(__file__).resolve().parent / "mcp-schemas.json"
+
+# How long a snapshot may go un-refreshed before the check fails. Generous:
+# the snapshot only gates THIS check (agents read the live schema), so the cost
+# of staleness is a weakened lint, not a broken agent. Long enough not to nag,
+# short enough that a year-old snapshot can't quietly validate nothing.
+SNAPSHOT_MAX_AGE_DAYS = 180
+
+# `atlassian-cli call <tool> '<json>'`, tolerating shell line-continuations
+# (joined before matching) and JSON that wraps across lines inside the quotes.
+#
+# `[^']*` rather than `.*?` with re.S: a non-greedy dot-matches-newline run has
+# no floor, so one example missing its closing `}'` swallows the following
+# example whole — the swallowed one is then never validated while the error
+# points at the wrong line. Excluding `'` cannot cross a quote boundary.
+CALL_RE = re.compile(r"atlassian-cli call ([\w.-]+)\s+'(\{[^']*\})'")
+# Every literal invocation, however malformed — used to prove CALL_RE saw them
+# all. A `call` whose args don't parse must fail loudly, not vanish.
+ANY_CALL_RE = re.compile(r"atlassian-cli call (\S+)")
+# `<toolName>`/`<name>` in the prose skeleton are documentation placeholders,
+# not examples; they legitimately have no JSON to check.
+PLACEHOLDER_TOOL_RE = re.compile(r"^<[\w-]+>$")
+
+
+def load_snapshot() -> tuple[dict[str, dict], list[str]]:
+    """Read the committed schema snapshot. Returns (tools, problems)."""
+    if not SNAPSHOT.exists():
+        return {}, [
+            (
+                f"{SNAPSHOT.name} is missing — run "
+                "`./validate_skill_doc.py --refresh` with an authenticated CLI"
+            )
+        ]
+    data = json.loads(SNAPSHOT.read_text())
+    problems: list[str] = []
+    captured = data.get("captured", "")
+    try:
+        age = (datetime.now(UTC).date() - date.fromisoformat(captured)).days
+    except ValueError:
+        problems.append(f"{SNAPSHOT.name}: unreadable 'captured' date {captured!r}")
+    else:
+        if age < 0:
+            # Negative age passes the limit below forever, so a clock skew or a
+            # hand-edited date would retire the staleness gate silently.
+            problems.append(
+                f"{SNAPSHOT.name} is dated {-age} day(s) in the future "
+                f"({captured!r}) — re-run with --refresh; a future date can "
+                "never go stale, so the age check would stop meaning anything"
+            )
+        elif age > SNAPSHOT_MAX_AGE_DAYS:
+            problems.append(
+                f"{SNAPSHOT.name} was captured {age} days ago (limit "
+                f"{SNAPSHOT_MAX_AGE_DAYS}) — re-run with --refresh so this "
+                "check is still testing against something real"
+            )
+    return data.get("tools", {}), problems
+
+
+def write_snapshot(tools: dict[str, dict], today: date) -> None:
+    """Persist the live schemas as the committed fixture.
+
+    Only `inputSchema` is kept: descriptions are prose that churns constantly
+    and would make every refresh a noisy diff, obscuring the parameter changes
+    that actually matter for review.
+    """
+    payload = {
+        "_comment": (
+            "GENERATED by validate_skill_doc.py --refresh. A CI fixture, not "
+            "agent-facing documentation: agents read the live schema via "
+            "`atlassian-cli tools <name> --schema`."
+        ),
+        "captured": today.isoformat(),
+        "tools": {
+            name: {"inputSchema": tool.get("inputSchema", {})}
+            for name, tool in sorted(tools.items())
+        },
+    }
+    SNAPSHOT.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+
+def load_tools() -> dict[str, dict]:
+    """Fetch the live tool schemas via the installed atlassian-cli."""
+    try:
+        import atlassian_cli
+    except ModuleNotFoundError:
+        # Resolve the nix-wrapped install rather than requiring a venv.
+        import subprocess
+
+        # check=False is intentional - `command -v` exits non-zero when the CLI
+        # is absent, and the empty stdout is handled below with a better message
+        # than a traceback.
+        which = subprocess.run(
+            ["sh", "-c", "command -v atlassian-cli"], capture_output=True, text=True, check=False
+        ).stdout.strip()
+        if not which:
+            sys.exit("atlassian-cli not on PATH — install it or run inside its env")
+        real = Path(which).resolve()
+        wrapped = real.parent / f".{real.name}-wrapped"
+        target = wrapped if wrapped.exists() else real
+        paths = re.findall(r"'([^']*site-packages)'", target.read_text(errors="ignore"))
+        if not paths:
+            sys.exit(f"could not locate atlassian-cli site-packages from {target}")
+        sys.path[:0] = paths
+        import atlassian_cli
+
+    tools = atlassian_cli._mcp().list_tools()
+    return {t["name"]: t for t in tools}
+
+
+def parse_examples(text: str) -> list[tuple[str, dict | None, str]]:
+    """Extract (tool, parsed_args, raw) for every documented invocation."""
+    flat = re.sub(r"\\\n\s*", " ", text)
+    out: list[tuple[str, dict | None, str]] = []
+    for m in CALL_RE.finditer(flat):
+        tool, blob = m.group(1), m.group(2)
+        args: dict | None
+        try:
+            args = json.loads(blob.replace("\n", " "))
+        except json.JSONDecodeError:
+            args = None
+        out.append((tool, args, blob))
+    return out
+
+
+def json_type(value) -> str:
+    return {
+        bool: "boolean",
+        int: "integer",
+        float: "number",
+        str: "string",
+        list: "array",
+        dict: "object",
+    }.get(type(value), "unknown")
+
+
+def type_matches(value, spec: dict) -> bool:
+    """Shallow type check against a property schema.
+
+    Only the top-level shape is checked — that is what actually broke in
+    practice (a `{representation, value}` object passed where the server wanted
+    a plain string). anyOf is accepted if any branch matches; unconstrained or
+    unfamiliar specs pass rather than emit noise.
+
+    `type` may be a list (`["string", "null"]` is standard for nullable
+    params) — treat it as a set of acceptable types, not a scalar.
+    """
+    if "anyOf" in spec:
+        return any(type_matches(value, s) for s in spec["anyOf"])
+    raw = spec.get("type")
+    if raw is None:
+        return True
+    expected = {raw} if isinstance(raw, str) else set(raw)
+    actual = json_type(value)
+    if actual == "integer" and "number" in expected:
+        return True
+    if actual == "string" and expected & {"object", "array"}:
+        # A JSON document carried as a string: the MCP takes ADF this way
+        # (commentBody is typed `string`). Only accept it when the string
+        # really does parse as the structured type — otherwise `fields:
+        # "summary"` where an array is wanted would pass as "well, ADF".
+        try:
+            return json_type(json.loads(value)) in expected
+        except (json.JSONDecodeError, TypeError):
+            return False
+    return actual in expected
+
+
+def enum_mismatch(value, spec: dict) -> str | None:
+    """Report a value outside a declared enum.
+
+    `contentFormat` is the parameter SKILL.md devotes a section to calling a
+    trap; an unchecked enum is exactly how a plausible-but-wrong spelling
+    (`ATLAS_DOC_FORMAT`, Jira REST's name for ADF) would ship.
+    """
+    allowed = spec.get("enum")
+    if not allowed or not isinstance(value, (str, int, float, bool)):
+        return None
+    if value in allowed:
+        return None
+    return f"not in enum {allowed}"
+
+
+TOOL_LIST_RE = re.compile(r"## The tools\n(.*?)(?=\nIf a name isn't here)", re.DOTALL)
+
+
+def tool_list_drift(tools: dict[str, dict], text: str) -> list[str]:
+    """Keep SKILL.md's discovery list honest against the server.
+
+    The list is a deliberate exception to "no transcribed API surface": bare
+    names let an agent skip a ~1k-token listing round-trip, and names churn far
+    more slowly than parameters. But transcribed is transcribed — unchecked, it
+    would rot exactly like the parameter tables this whole effort removed.
+    """
+    section = TOOL_LIST_RE.search(text)
+    if not section:
+        # Only the real SKILL.md is required to carry the list; validate() is
+        # also called on fragments in tests and on partial docs.
+        return []
+    if not tools:
+        return []  # nothing to compare against
+    listed = set(re.findall(r"`([A-Za-z]\w*)`", section.group(1)))
+    problems = []
+    if missing := sorted(set(tools) - listed):
+        problems.append(f"SKILL.md tool list is missing: {', '.join(missing)}")
+    if extra := sorted(listed - set(tools)):
+        problems.append(f"SKILL.md tool list names non-existent tools: {', '.join(extra)}")
+    return problems
+
+
+def validate(tools: dict[str, dict], text: str) -> list[str]:
+    problems: list[str] = []
+
+    # Every literal `atlassian-cli call` must be accounted for. Without this,
+    # any invocation CALL_RE can't match — double-quoted JSON, no args at all,
+    # a stray newline before the closing quote — silently contributes nothing
+    # and the run still reports "ok". Silence must not read as success.
+    flat = re.sub(r"\\\n\s*", " ", text)
+    parsed = parse_examples(text)
+    seen = len(parsed)
+    literal = [name for name in ANY_CALL_RE.findall(flat) if not PLACEHOLDER_TOOL_RE.match(name)]
+    if len(literal) > seen:
+        matched = [t for t, _, _ in parsed]
+        for name in literal:
+            if name in matched:
+                matched.remove(name)
+            else:
+                problems.append(
+                    f"{name}: `atlassian-cli call` found but its arguments could "
+                    "not be parsed — quote the JSON in single quotes on one "
+                    "logical line, or it ships unchecked"
+                )
+
+    problems += tool_list_drift(tools, text)
+
+    for tool, args, raw in parsed:
+        if tool not in tools:
+            problems.append(f"{tool}: no such tool on the server")
+            continue
+        if args is None:
+            problems.append(f"{tool}: example is not parseable JSON — {raw[:60]}...")
+            continue
+        schema = tools[tool].get("inputSchema", {})
+        props: dict = schema.get("properties", {})
+        required = set(schema.get("required", []))
+        for key, value in args.items():
+            if key not in props:
+                problems.append(
+                    f"{tool}.{key}: not a parameter (valid: {', '.join(sorted(props))})"
+                )
+            elif not type_matches(value, props[key]):
+                want = props[key].get("type", "?")
+                problems.append(f"{tool}.{key}: wrong shape — sent {json_type(value)}, want {want}")
+            elif (bad := enum_mismatch(value, props[key])) is not None:
+                problems.append(f"{tool}.{key}: {value!r} {bad}")
+        for key in sorted(required - set(args)):
+            problems.append(f"{tool}.{key}: required parameter missing from example")
+    return problems
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--live",
+        action="store_true",
+        help="validate against the live server instead of the snapshot (needs auth)",
+    )
+    ap.add_argument(
+        "--refresh",
+        action="store_true",
+        help="re-capture the snapshot from the live server, then validate (needs auth)",
+    )
+    args = ap.parse_args()
+
+    problems: list[str] = []
+    if args.live or args.refresh:
+        tools = load_tools()
+        source = "live schema"
+        if args.refresh:
+            write_snapshot(tools, datetime.now(UTC).date())
+            print(f"refreshed {SNAPSHOT.name} ({len(tools)} tools)")
+    else:
+        tools, problems = load_snapshot()
+        source = f"snapshot {SNAPSHOT.name}"
+        if problems:
+            # An unusable snapshot must not fall through: validating against an
+            # empty tool map would report every example as "no such tool", or
+            # quietly pass a doc that has no examples at all.
+            for p in problems:
+                print(f"  FAIL {p}")
+            return 1
+
+    text = SKILL.read_text()
+
+    problems += validate(tools, text)
+    if not TOOL_LIST_RE.search(text):
+        problems.append(
+            "SKILL.md: '## The tools' section is missing — agents lose tool "
+            "discovery and pay a ~1k-token listing round-trip instead"
+        )
+    examples = len(parse_examples(text))
+    if problems:
+        print(f"{len(problems)} problem(s) in {SKILL.relative_to(REPO)}:\n")
+        for p in problems:
+            print(f"  \u2717 {p}")
+        return 1
+    print(f"ok: {examples} documented call(s) match the {source} ({len(tools)} tools)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

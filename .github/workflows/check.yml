@@ -9,6 +9,13 @@ on:
       - '.github/workflows/**'
       - '**/pyproject.toml'
       - '**/*.py'
+      # SKILL.md content is validated by checks.skill-doc-* (examples checked
+      # against the MCP schema snapshot), so doc edits must run CI too. Without
+      # this a docs-only PR never queues the required checks and can therefore
+      # NEVER satisfy branch protection — it sits BLOCKED forever with an empty
+      # statusCheckRollup. That is what happened to #49.
+      - '**/*.md'
+      - '**/*.json'
   pull_request:
     branches: [main]
     paths:
@@ -17,6 +24,13 @@ on:
       - '.github/workflows/**'
       - '**/pyproject.toml'
       - '**/*.py'
+      # SKILL.md content is validated by checks.skill-doc-* (examples checked
+      # against the MCP schema snapshot), so doc edits must run CI too. Without
+      # this a docs-only PR never queues the required checks and can therefore
+      # NEVER satisfy branch protection — it sits BLOCKED forever with an empty
+      # statusCheckRollup. That is what happened to #49.
+      - '**/*.md'
+      - '**/*.json'
   workflow_dispatch:
 
 concurrency:
@@ -43,12 +57,17 @@ jobs:
           # in the 24h queue), and nixpkgs is sunsetting x86_64-darwin after
           # 25.11. macos-14 covers the live darwin target.
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: |
             access-tokens = github.com=${{ secrets.GITHUB_TOKEN }}
+            # officecli is a .NET self-contained build re-exported from
+            # llm-agents.nix — pull it from numtide's cache instead of
+            # building dotnet from source on every CI run.
+            extra-substituters = https://cache.numtide.com
+            extra-trusted-public-keys = niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g=
 
       - uses: cachix/cachix-action@v17
         with:

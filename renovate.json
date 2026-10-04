@@ -15,6 +15,21 @@
     ],
     "automerge": true
   },
+  "postUpgradeTasks": {
+    "description": [
+      "The customManagers below rewrite a tag pin inside flake.nix, but a regex manager has no updateArtifacts hook — so flake.lock keeps pointing at the OLD tag and the PR is internally inconsistent.",
+      "nix then re-resolves and REWRITES flake.lock during evaluation, mutating the flake source tree after lazy-trees has already hashed it for any check whose src is the repo (checks.*.treefmt). That surfaces as 'store path ... was hashed to avoid a full copy at first, but upon reading it again, the contents have changed' and fails every runner deterministically. Seen on PR #54 (pplx-agent-tools v0.4.1).",
+      "`nix flake lock` (not `nix flake update`) re-resolves ONLY the inputs whose flake.nix spec no longer matches their lock entry, so unrelated inputs such as nixpkgs stay put. Verified against PR #54's broken tree: pplx-agent-tools moved v0.4.0 -> v0.4.1 and the nixpkgs rev was untouched.",
+      "Requires `nix` on PATH in renovate's own execution environment, which is why .github/workflows/renovate.yml runs renovate from nixpkgs instead of the Docker image, plus RENOVATE_ALLOWED_COMMANDS there to permit this exact command."
+    ],
+    "commands": [
+      "nix flake lock"
+    ],
+    "fileFilters": [
+      "flake.lock"
+    ],
+    "executionMode": "branch"
+  },
   "customManagers": [
     {
       "customType": "regex",
@@ -35,7 +50,7 @@
       "matchStrings": [
         "msgvaultVersion = \"(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
       ],
-      "depNameTemplate": "wesm/msgvault",
+      "depNameTemplate": "kenn-io/msgvault",
       "datasourceTemplate": "github-releases",
       "versioningTemplate": "semver",
       "extractVersionTemplate": "^v(?<version>.*)$"
@@ -51,12 +66,27 @@
       ]
     },
     {
+      "description": [
+        "Replaces the top-level postUpgradeTasks for msgvault branches only: msgvault is built from source by ./msgvault, whose web assets and Go module cache are fixed-output derivations. A tag bump changes both, so their hashes must be recomputed or every runner fails on a hash mismatch.",
+        "The refresh builds the web assets and the Go module cache, so it is scoped here rather than run on every Renovate branch."
+      ],
       "matchDepNames": [
-        "wesm/msgvault"
+        "kenn-io/msgvault"
       ],
       "schedule": [
         "at any time"
-      ]
+      ],
+      "postUpgradeTasks": {
+        "commands": [
+          "nix flake lock",
+          "nix run .#msgvault-update-hashes"
+        ],
+        "fileFilters": [
+          "flake.lock",
+          "msgvault/default.nix"
+        ],
+        "executionMode": "branch"
+      }
     },
     {
       "matchDepNames": [

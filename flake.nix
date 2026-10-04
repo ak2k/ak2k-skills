@@ -14,15 +14,14 @@
 
     # msgvault — local email/chat archive (Gmail, IMAP, WhatsApp, MBOX,
     # Apple Mail) with DuckDB analytics + FTS5 + optional vector search +
-    # MCP server. Upstream flake ships the binary and one Claude Code skill;
-    # we re-export with a corrected Version ldflag (upstream hardcodes
-    # "nix-dev") and copy the skill tree into $out/share/skills/msgvault-query/
-    # so it flows through the uniform registry like every other skill.
+    # MCP server. Source only: upstream ships no flake, so ./msgvault builds
+    # the tag tree and ships its Claude Code skill as msgvault-query.
     #
     # NOTE: `msgvaultVersion` below must match the tag in this URL. Both are
     # tracked by one Renovate custom-manager entry, and the
     # `msgvault-version-matches` flake check fails the build on drift.
-    msgvault.url = "github:wesm/msgvault/v0.14.0";
+    msgvault.url = "github:kenn-io/msgvault/v0.21.0";
+    msgvault.flake = false;
 
     # Atlassian's official Remote MCP server repo — we don't need the server
     # itself (our atlassian-cli wraps it remotely), but the repo ships 5
@@ -44,8 +43,26 @@
     # the package + register the skill via nix/registry.nix.
     # Pinned to a tag so Renovate's github-releases regex manager auto-bumps
     # us on every new pplx-agent-tools release.
-    pplx-agent-tools.url = "github:ak2k/pplx-agent-tools/v0.3.3";
+    pplx-agent-tools.url = "github:ak2k/pplx-agent-tools/v0.10.0";
     pplx-agent-tools.inputs.nixpkgs.follows = "nixpkgs";
+
+    # llm-agents.nix — source of the officecli package (iOfficeAI/OfficeCLI,
+    # a .NET CLI for .docx/.xlsx/.pptx). Deliberately NO nixpkgs.follows:
+    # llm-agents builds against its own locked nixpkgs and publishes to
+    # cache.numtide.com — a follows would fork our derivations off that
+    # cache and force local .NET rebuilds. Unpinned (tracks main); Renovate
+    # lock-file maintenance bumps it weekly.
+    llm-agents.url = "github:numtide/llm-agents.nix";
+
+    # surefetch — verified web-access ladder (fetch/search/crawl/map/extract). Its own flake
+    # exposes `packages.<system>.default` = the `surefetch` CLI (a uv2nix runtime venv). We
+    # register it as a bundled CLI+skill: the binary lands on PATH and the SKILL.md ships from
+    # this repo's `skills/surefetch/`. Private repo — resolved via the same GitHub token nix
+    # uses for the other ak2k inputs. NOT `follows`-pinned to our nixpkgs: surefetch's uv2nix
+    # closure pins its own, and overriding it risks the C-extension build.
+    # Pinned by commit so Renovate opens a digest PR on each upstream merge; a bare branch URL
+    # only moves in the weekly lock-file maintenance.
+    surefetch.url = "github:ak2k/surefetch/c6a2d0449efa850b671cb5e66b17aa5809999220";
   };
 
   outputs =
@@ -55,7 +72,7 @@
 
       # Keep in lockstep with `inputs.msgvault.url`'s tag. Renovate manages
       # both; the msgvault-version-matches check asserts they agree.
-      msgvaultVersion = "0.14.0";
+      msgvaultVersion = "0.21.0";
 
       # gws bundle membership is system-agnostic — derived from the upstream
       # source tree, the same list on every platform. nix/gws.nix partitions
@@ -106,25 +123,58 @@
           ...
         }:
         let
-          # Override upstream's package to (a) report the real version via
-          # `msgvault --version` rather than "nix-dev", (b) correct the
-          # derivation name (upstream's flake.nix at tag v0.14.0 still carries
-          # a stale `version = "0.13.1"` literal), (c) ship the Claude Code
-          # skill under $out/share/skills/msgvault-query/ for the registry.
-          msgvaultPkg = inputs.msgvault.packages.${system}.default.overrideAttrs (old: {
-            # We're intentionally replacing upstream's stale `version = "0.13.1"`
-            # with the real tag; silence nixpkgs's warning about version bumps.
-            __intentionallyOverridingVersion = true;
+          # officecli's agent skills ship EMBEDDED in the .NET binary (upstream
+          # CI keeps them byte-identical to the repo copies), and `officecli
+          # skills claude` is pure local extraction — no network. Extracting at
+          # build time guarantees the installed SKILL.md always matches the
+          # installed binary. Only the umbrella skill is registered: its body
+          # routes to the 10 specialized skills (pptx / word / excel /
+          # pitch-deck / financial-model / morph-ppt / ...) via `officecli
+          # load_skill <name>` at runtime, so one ~55-token description buys
+          # the whole catalogue without 10 more always-on frontmatters (same
+          # idle-context reasoning as the atlassian-cli workflow nesting).
+          officecliSkill =
+            pkgs.runCommand "officecli-skill"
+              {
+                nativeBuildInputs = [ inputs.llm-agents.packages.${system}.officecli ];
+              }
+              ''
+                export HOME=$(mktemp -d)
+                officecli skills claude
+                src=$HOME/.claude/skills/officecli/SKILL.md
+
+                # Drop the "## Install" section — a curl|bash bootstrap that is
+                # wrong on Nix-managed hosts (the registry wires the binary
+                # onto PATH). Deletes the heading through its closing "---".
+                awk '
+                  /^## Install$/ { skip=1; next }
+                  skip && /^---$/ { skip=0; next }
+                  !skip { print }
+                ' "$src" > SKILL.md
+
+                # Guard the patch against upstream restructuring: the section
+                # must have existed, the curl URL must be gone, and the
+                # load_skill routing table must still be present.
+                grep -q '^## Install$' "$src" || {
+                  echo "ERROR: '## Install' heading missing upstream; re-check the awk patch"
+                  exit 1
+                }
+                if grep -q 'd\.officecli\.ai' SKILL.md; then
+                  echo "ERROR: curl-install instructions survived the patch"
+                  exit 1
+                fi
+                if ! grep -q '^## Specialized Skills$' SKILL.md; then
+                  echo "ERROR: load_skill routing section missing from extracted SKILL.md"
+                  exit 1
+                fi
+
+                install -Dm444 SKILL.md $out/share/skills/officecli/SKILL.md
+              '';
+
+          msgvaultPkg = pkgs.callPackage ./msgvault {
+            src = inputs.msgvault;
             version = msgvaultVersion;
-            name = "msgvault-${msgvaultVersion}";
-            ldflags = [
-              "-X github.com/wesm/msgvault/cmd/msgvault/cmd.Version=v${msgvaultVersion}"
-            ];
-            postInstall = (old.postInstall or "") + ''
-              mkdir -p $out/share/skills/msgvault-query
-              cp -r ${inputs.msgvault}/skills/claude-code/. $out/share/skills/msgvault-query/
-            '';
-          });
+          };
         in
         {
           packages = {
@@ -140,7 +190,23 @@
               gwsSkillsSrc = "${inputs.googleworkspace-cli}/skills";
             };
             msgvault = msgvaultPkg;
+            # Pure re-export — never overrideAttrs this one: any change forks
+            # the derivation off cache.numtide.com and forces a local .NET
+            # rebuild. The skill lives in the separate officecli-skill output.
+            officecli = inputs.llm-agents.packages.${system}.officecli;
+            officecli-skill = officecliSkill;
             pplx-agent-tools = inputs.pplx-agent-tools.packages.${system}.default;
+          };
+
+          # Renovate's post-upgrade task for msgvault bumps; see renovate.json.
+          apps.msgvault-update-hashes = {
+            type = "app";
+            program = lib.getExe (
+              pkgs.writers.writePython3Bin "msgvault-update-hashes" { } (
+                builtins.readFile ./msgvault/update_hashes.py
+              )
+            );
+            meta.description = "Refresh msgvault's web and Go module hashes after a tag bump";
           };
 
           # Debug handle. Inspect with:
@@ -155,6 +221,67 @@
               packageChecks = lib.mapAttrs' (n: lib.nameValuePair "package-${n}") self'.packages;
             in
             packageChecks
+            // {
+              # Doc-drift guard: every `atlassian-cli call` example in
+              # SKILL.md is checked against the MCP schema — tool exists, keys
+              # are real parameters, value shapes match, enums are respected,
+              # required params present — plus the `## The tools` list.
+              #
+              # Runs against the COMMITTED snapshot (atlassian-cli/
+              # mcp-schemas.json), not the live server: `tools/list` is
+              # authenticated, and a long-lived Atlassian OAuth token in repo
+              # secrets is too high a price for linting markdown. The snapshot
+              # keeps this hermetic so it runs on every PR; refresh it with
+              # `atlassian-cli/validate_skill_doc.py --refresh` and upstream
+              # drift shows up as a reviewable diff. The script fails if the
+              # snapshot goes stale, so it cannot silently check nothing.
+              skill-doc-atlassian-cli = pkgs.runCommand "skill-doc-atlassian-cli" { } ''
+                cp -r ${./atlassian-cli} atlassian-cli
+                cp -r ${./skills} skills
+                chmod -R u+w atlassian-cli skills
+                ${pkgs.python3}/bin/python3 atlassian-cli/validate_skill_doc.py
+                touch $out
+              '';
+            }
+            // {
+              # The python suites, run in the repo layout they assume.
+              #
+              # NOT per-package `pytestCheckHook`: each package's `src` is its
+              # own directory, and test_validate_skill_doc reaches up to
+              # ../skills/atlassian-cli/SKILL.md — the shipped doc it validates
+              # lives outside the package it belongs to. Copying the trees here
+              # is the same trick skill-doc-atlassian-cli below plays, and it
+              # keeps every suite under one runner.
+              #
+              # Without this the tests are inert: they are bare pytest
+              # functions, so `unittest discover` collects zero of them, and
+              # nothing else in the flake ever invoked pytest.
+              #
+              # kagi is here too: its suite imports the package, which pulls in
+              # beautifulsoup4, so the runner env carries it.
+              python-tests =
+                let
+                  py = pkgs.python3.withPackages (ps: [
+                    ps.pytest
+                    ps.click
+                    ps.httpx
+                    ps.beautifulsoup4
+                  ]);
+                in
+                pkgs.runCommand "python-tests" { } ''
+                  cp -r ${./atlassian-cli} atlassian-cli
+                  cp -r ${./claude-sessions} claude-sessions
+                  cp -r ${./krisp-cli} krisp-cli
+                  cp -r ${./kagi} kagi
+                  cp -r ${./skills} skills
+                  chmod -R u+w atlassian-cli claude-sessions krisp-cli kagi skills
+                  for d in atlassian-cli claude-sessions krisp-cli kagi; do
+                    echo "== $d =="
+                    (cd "$d" && ${py}/bin/pytest tests -q)
+                  done
+                  touch $out
+                '';
+            }
             // {
               # Drift guard: Renovate manages the `inputs.msgvault.url` tag and
               # the `msgvaultVersion` literal in lockstep via one custom-manager
@@ -208,6 +335,7 @@
                   httpx
                 ];
               };
+              "msgvault" = { };
             };
 
             settings.global.excludes = [
