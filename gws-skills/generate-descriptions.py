@@ -111,7 +111,7 @@ class Service:
 
 
 def _desc(skill_md: Path) -> str:
-    m = re.search(r'^description:\s*"?(.*?)"?\s*$', skill_md.read_text(), re.M)
+    m = re.search(r'^description:\s*"?(.*?)"?\s*$', skill_md.read_text(), re.MULTILINE)
     return m.group(1) if m else ""
 
 
@@ -215,7 +215,7 @@ def refine(svc: Service, roster: str, model: str) -> dict | None:
     ]
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, env=env, timeout=120
+            cmd, capture_output=True, text=True, env=env, timeout=120, check=False
         )
     except subprocess.TimeoutExpired:
         print(f"  [{svc.name}] TIMEOUT", file=sys.stderr)

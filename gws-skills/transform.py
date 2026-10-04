@@ -24,7 +24,7 @@ HELPER_RE = re.compile(r"^gws-([a-z]+)-(.+)$")
 # Relative markdown link target, e.g. the `../foo/SKILL.md` in `](../foo/SKILL.md)`.
 LINK_RE = re.compile(r"\]\((\.\.?/[^)]+)\)")
 # The first `description:` line of a SKILL.md frontmatter block.
-DESC_RE = re.compile(r"^description:.*$", re.M)
+DESC_RE = re.compile(r"^description:.*$", re.MULTILINE)
 
 
 def nest_helpers(skills: Path) -> int:
@@ -88,7 +88,7 @@ def apply_descriptions(skills: Path, overrides: dict) -> int:
         # Callable replacement avoids re's backslash-escape handling; ensure_ascii
         # keeps non-ASCII (e.g. an em-dash) literal in the frontmatter, not \uXXXX.
         repl = f"description: {json.dumps(desc, ensure_ascii=False)}"
-        new = DESC_RE.sub(lambda _m: repl, md.read_text(), count=1)
+        new = DESC_RE.sub(lambda _m, r=repl: r, md.read_text(), count=1)
         md.write_text(new)
         applied += 1
     return applied
