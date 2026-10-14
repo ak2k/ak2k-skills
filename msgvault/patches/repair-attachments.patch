@@ -1,0 +1,1037 @@
+diff --git a/cmd/msgvault/cmd/repair_attachments.go b/cmd/msgvault/cmd/repair_attachments.go
+new file mode 100644
+index 0000000..3187fe6
+--- /dev/null
++++ b/cmd/msgvault/cmd/repair_attachments.go
+@@ -0,0 +1,481 @@
++package cmd
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"io"
++	"time"
++
++	"github.com/spf13/cobra"
++	"go.kenn.io/msgvault/internal/attachmentstore"
++	"go.kenn.io/msgvault/internal/export"
++	"go.kenn.io/msgvault/internal/mime"
++	"go.kenn.io/msgvault/internal/store"
++	msgsync "go.kenn.io/msgvault/internal/sync"
++)
++
++const (
++	attachmentRepairDateLayout  = "2006-01-02"
++	attachmentRepairSampleLimit = 10
++)
++
++var (
++	repairAttachmentsSince string
++	repairAttachmentsUntil string
++	repairAttachmentsApply bool
++)
++
++var repairAttachmentsCmd = &cobra.Command{
++	Use:   "repair-attachments",
++	Short: "Restore attachments of archived messages from their raw MIME",
++	Long: `Re-parse the stored raw MIME of every message archived between --since
++and --until (UTC dates, both inclusive, matched against the time msgvault
++archived the message, not its sent date) and restore each attachment whose
++row is missing or whose stored file can no longer be read.
++
++The default is a read-only report that neither upgrades nor migrates the
++archive. Pass --apply to write the attachment files and rows and refresh the
++analytics cache. The command runs against the local SQLite archive only and
++fails while a daemon owns it.`,
++	Args: cobra.NoArgs,
++	RunE: func(cmd *cobra.Command, args []string) error {
++		since, err := time.Parse(attachmentRepairDateLayout, repairAttachmentsSince)
++		if err != nil {
++			return usageErr(cmd, fmt.Errorf("--since: %w", err))
++		}
++		until, err := time.Parse(attachmentRepairDateLayout, repairAttachmentsUntil)
++		if err != nil {
++			return usageErr(cmd, fmt.Errorf("--until: %w", err))
++		}
++		if until.Before(since) {
++			return usageErr(cmd, fmt.Errorf("--until %s is before --since %s",
++				repairAttachmentsUntil, repairAttachmentsSince))
++		}
++		return runRepairAttachmentsLocal(cmd, since, until, repairAttachmentsApply)
++	},
++}
++
++type plannedAttachmentRepair struct {
++	messageID  int64
++	attachment mime.Attachment
++	// rowExists marks a surviving row whose file cannot be read.
++	rowExists bool
++	// unkeyedRow marks a match on a row stored without a source part key;
++	// writing the key can insert a second row beside it.
++	unkeyedRow bool
++}
++
++type attachmentRepairPlan struct {
++	messages        int
++	rawMIMEFailures int
++	repairs         []plannedAttachmentRepair
++}
++
++// runRepairAttachmentsLocal never forwards to a daemon: the daemon runs only
++// allowlisted commands, and the write-owner lock taken here makes the repair
++// fail rather than race a running daemon.
++func runRepairAttachmentsLocal(
++	cmd *cobra.Command,
++	since, until time.Time,
++	apply bool,
++) (runErr error) {
++	ctx := cmd.Context()
++	state := invocationFromCommand(cmd)
++	if state == nil || state.cfg == nil {
++		return errors.New("configuration is unavailable")
++	}
++	cfg := state.cfg
++	if store.IsPostgresURL(cfg.DatabaseDSN()) {
++		return errors.New("repair-attachments supports SQLite archives only")
++	}
++	st, cleanup, err := openAttachmentRepairStore(state, apply)
++	if err != nil {
++		return err
++	}
++	defer cleanup()
++
++	blobs, err := attachmentstore.New(store.NewPackCatalog(st), cfg.AttachmentsDir())
++	if err != nil {
++		return err
++	}
++	defer func() { runErr = errors.Join(runErr, blobs.Close()) }()
++
++	plan, err := planAttachmentRepairs(ctx, st, blobs, since, until.AddDate(0, 0, 1))
++	if err != nil {
++		return err
++	}
++	out := cmd.OutOrStdout()
++	printAttachmentRepairPlan(out, plan, since, until)
++
++	var failures []error
++	if plan.rawMIMEFailures > 0 {
++		failures = append(failures, fmt.Errorf(
++			"%d message(s) whose raw MIME could not be read or parsed",
++			plan.rawMIMEFailures))
++	}
++	if !apply {
++		_, err := fmt.Fprintln(out,
++			"\nDry run: nothing was written. Re-run with --apply to restore.")
++		return errors.Join(append(failures, err)...)
++	}
++	restored := 0
++	if len(plan.repairs) == 0 {
++		if _, err := fmt.Fprintln(out, "Nothing to repair."); err != nil {
++			failures = append(failures, err)
++		}
++	}
++	for _, repair := range plan.repairs {
++		if err := ctx.Err(); err != nil {
++			failures = append(failures, err)
++			break
++		}
++		att := repair.attachment
++		write, err := storeRepairedAttachment(cfg.AttachmentsDir(), &att)
++		if err == nil && write.StoragePath == "" {
++			err = errors.New("attachment file was not stored")
++		}
++		if err == nil {
++			if repair.unkeyedRow {
++				write.SourcePartKey = ""
++			}
++			err = st.UpsertAttachmentRecordWithStats(ctx, repair.messageID, write, true)
++		}
++		if err == nil && !attachmentBlobReadable(ctx, blobs, write.ContentHash) {
++			err = dropDeadPackEntry(ctx, st, blobs, write.ContentHash)
++		}
++		if err != nil {
++			failures = append(failures, fmt.Errorf("message %d part %q: %w",
++				repair.messageID, repair.attachment.PartKey, err))
++			continue
++		}
++		restored++
++	}
++	if len(plan.repairs) > 0 {
++		if _, err := fmt.Fprintf(out, "Restored %d attachment(s).\n", restored); err != nil {
++			failures = append(failures, err)
++		}
++	}
++	// Rows can commit even when their blob then fails to verify, and an earlier
++	// run's refresh may have failed; the rebuild is a no-op when the cache is
++	// current.
++	if err := rebuildCacheAfterWrite(cfg.DatabaseDSN(), state); err != nil {
++		failures = append(failures, err)
++	}
++	if len(failures) > 0 {
++		return fmt.Errorf("repair-attachments: %d error(s): %w",
++			len(failures), errors.Join(failures...))
++	}
++	return nil
++}
++
++// openAttachmentRepairStore takes the write-owner lock in both modes, so a dry
++// run also refuses while a daemon owns the archive, but only --apply may
++// initialize or migrate the schema.
++func openAttachmentRepairStore(state *invocation, apply bool) (*store.Store, func(), error) {
++	if apply {
++		return openWritableStoreAndInitForInvocation(state)
++	}
++	release, err := acquireDirectSQLiteWriteLock(state.cfg, state)
++	if err != nil {
++		return nil, nil, err
++	}
++	st, err := store.OpenReadOnly(state.cfg.DatabaseDSN())
++	if err != nil {
++		release()
++		return nil, nil, fmt.Errorf("open archive: %w", err)
++	}
++	if err := checkAttachmentRepairSchema(st); err != nil {
++		_ = st.Close()
++		release()
++		return nil, nil, err
++	}
++	return st, func() {
++		_ = st.Close()
++		release()
++	}, nil
++}
++
++// checkAttachmentRepairSchema confirms a dry run can read everything the
++// repair reads without the schema upgrade that only --apply performs.
++func checkAttachmentRepairSchema(st *store.Store) error {
++	upgradeErr := func(cause error) error {
++		return fmt.Errorf("the archive schema needs an upgrade before a dry run "+
++			"can read it (%w); run with --apply, which upgrades it, or upgrade "+
++			"the archive with another msgvault write command first", cause)
++	}
++	stale, column, err := st.SchemaStale()
++	if err != nil {
++		return err
++	}
++	if stale {
++		return upgradeErr(fmt.Errorf("missing %s", column))
++	}
++	rows, err := st.DB().Query(`
++		SELECT m.archived_at, r.raw_format, r.raw_data, r.compression,
++		       a.source_part_key, a.content_hash, a.thumbnail_hash, p.blob_hash
++		FROM messages m, message_raw r, attachments a, attachment_pack_index p
++		LIMIT 0`)
++	if err != nil {
++		return upgradeErr(err)
++	}
++	return rows.Close()
++}
++
++// dropDeadPackEntry lets the restored loose copy serve a blob whose pack can no
++// longer be read: the catalog serves a pack index entry in preference to a
++// loose file, and the loose copy was written against the expected hash.
++func dropDeadPackEntry(
++	ctx context.Context,
++	st *store.Store,
++	blobs *attachmentstore.Store,
++	hash string,
++) error {
++	unreadable := fmt.Errorf("attachment %s still cannot be read after the restore", hash)
++	if err := ctx.Err(); err != nil {
++		return errors.Join(unreadable, err)
++	}
++	entry, err := st.GetAttachmentPackEntry(hash)
++	if err != nil {
++		return errors.Join(unreadable, err)
++	}
++	if entry == nil {
++		return unreadable
++	}
++	if err := st.DeletePackIndexEntryContext(ctx, hash); err != nil {
++		return errors.Join(unreadable, err)
++	}
++	if !attachmentBlobReadable(ctx, blobs, hash) {
++		return unreadable
++	}
++	return nil
++}
++
++// storeRepairedAttachment also publishes an empty part, which sync skips but
++// relocation stores.
++func storeRepairedAttachment(attachmentsDir string, att *mime.Attachment) (store.AttachmentWrite, error) {
++	if len(att.Content) > 0 {
++		return msgsync.StoreMIMEAttachment(attachmentsDir, att)
++	}
++	storagePath, err := export.StoreAttachmentFileIncludingEmpty(attachmentsDir, att)
++	if err != nil || storagePath == "" {
++		return store.AttachmentWrite{}, err
++	}
++	role, roleSource := store.AttachmentRoleFromMIME(
++		att.Disposition, att.IsInline, att.ContentID)
++	return store.AttachmentWrite{
++		Filename:      att.Filename,
++		MIMEType:      att.ContentType,
++		StoragePath:   storagePath,
++		ContentHash:   att.ContentHash,
++		Role:          role,
++		RoleSource:    roleSource,
++		SourcePartKey: att.PartKey,
++		ContentID:     att.ContentID,
++	}, nil
++}
++
++type attachmentRepairRow struct {
++	sourcePartKey string
++	contentHash   string
++}
++
++func planAttachmentRepairs(
++	ctx context.Context,
++	st *store.Store,
++	blobs *attachmentstore.Store,
++	from, to time.Time,
++) (*attachmentRepairPlan, error) {
++	messageIDs, err := listMIMEMessagesArchivedBetween(ctx, st, from, to)
++	if err != nil {
++		return nil, err
++	}
++	plan := &attachmentRepairPlan{messages: len(messageIDs)}
++	for _, messageID := range messageIDs {
++		if err := ctx.Err(); err != nil {
++			return nil, err
++		}
++		raw, err := st.GetMessageRawContext(ctx, messageID)
++		if err != nil {
++			plan.rawMIMEFailures++
++			continue
++		}
++		parsed, err := mime.Parse(raw)
++		if err != nil {
++			plan.rawMIMEFailures++
++			continue
++		}
++		if len(parsed.Attachments) == 0 {
++			continue
++		}
++		rows, err := listAttachmentRepairRows(ctx, st, messageID)
++		if err != nil {
++			return nil, err
++		}
++		for _, att := range parsed.Attachments {
++			row, unkeyed, found := matchAttachmentRepairRow(rows, att)
++			if found && attachmentBlobReadable(ctx, blobs, row.contentHash) {
++				continue
++			}
++			// Sync never stores an empty part, so only a surviving row marks
++			// one as lost.
++			if !found && len(att.Content) == 0 {
++				continue
++			}
++			plan.repairs = append(plan.repairs, plannedAttachmentRepair{
++				messageID:  messageID,
++				attachment: att,
++				rowExists:  found,
++				unkeyedRow: unkeyed,
++			})
++		}
++	}
++	return plan, nil
++}
++
++func listMIMEMessagesArchivedBetween(
++	ctx context.Context,
++	st *store.Store,
++	from, to time.Time,
++) ([]int64, error) {
++	rows, err := st.DB().QueryContext(ctx, st.Rebind(`
++		SELECT m.id
++		FROM messages m
++		JOIN message_raw mr ON mr.message_id = m.id AND mr.raw_format = 'mime'
++		WHERE m.archived_at >= ? AND m.archived_at < ?
++		ORDER BY m.id
++	`), archiveTimeArg(from), archiveTimeArg(to))
++	if err != nil {
++		return nil, fmt.Errorf("list messages archived in window: %w", err)
++	}
++	defer func() { _ = rows.Close() }()
++	var ids []int64
++	for rows.Next() {
++		var id int64
++		if err := rows.Scan(&id); err != nil {
++			return nil, fmt.Errorf("scan archived message id: %w", err)
++		}
++		ids = append(ids, id)
++	}
++	return ids, rows.Err()
++}
++
++// archiveTimeArg matches SQLite's CURRENT_TIMESTAMP text layout, which is how
++// archived_at is stored there; a driver-formatted time would compare as text
++// against a different layout.
++func archiveTimeArg(t time.Time) string {
++	return t.UTC().Format("2006-01-02 15:04:05")
++}
++
++func listAttachmentRepairRows(
++	ctx context.Context,
++	st *store.Store,
++	messageID int64,
++) ([]attachmentRepairRow, error) {
++	rows, err := st.DB().QueryContext(ctx, st.Rebind(`
++		SELECT COALESCE(source_part_key, ''), COALESCE(content_hash, '')
++		FROM attachments WHERE message_id = ?
++	`), messageID)
++	if err != nil {
++		return nil, fmt.Errorf("list attachments of message %d: %w", messageID, err)
++	}
++	defer func() { _ = rows.Close() }()
++	var result []attachmentRepairRow
++	for rows.Next() {
++		var row attachmentRepairRow
++		if err := rows.Scan(&row.sourcePartKey, &row.contentHash); err != nil {
++			return nil, fmt.Errorf("scan attachment of message %d: %w", messageID, err)
++		}
++		result = append(result, row)
++	}
++	return result, rows.Err()
++}
++
++// matchAttachmentRepairRow finds the row sync would have written for att: by
++// source_part_key, or by content hash for rows written without one.
++func matchAttachmentRepairRow(
++	rows []attachmentRepairRow,
++	att mime.Attachment,
++) (row attachmentRepairRow, unkeyed, found bool) {
++	if att.PartKey != "" {
++		for _, r := range rows {
++			if r.sourcePartKey == att.PartKey {
++				return r, false, true
++			}
++		}
++	}
++	for _, r := range rows {
++		if r.sourcePartKey == "" && r.contentHash == att.ContentHash {
++			return r, true, true
++		}
++	}
++	return attachmentRepairRow{}, false, false
++}
++
++// attachmentBlobReadable reads the whole blob through the attachment store, so
++// a packed blob counts as present and a truncated or corrupt one does not.
++func attachmentBlobReadable(
++	ctx context.Context,
++	blobs *attachmentstore.Store,
++	hash string,
++) bool {
++	if hash == "" {
++		return false
++	}
++	reader, _, err := blobs.OpenStream(ctx, hash)
++	if err != nil {
++		return false
++	}
++	_, copyErr := io.Copy(io.Discard, reader)
++	return errors.Join(copyErr, reader.Close()) == nil
++}
++
++func printAttachmentRepairPlan(
++	out io.Writer,
++	plan *attachmentRepairPlan,
++	since, until time.Time,
++) {
++	missingRows := 0
++	for _, repair := range plan.repairs {
++		if !repair.rowExists {
++			missingRows++
++		}
++	}
++	_, _ = fmt.Fprintf(out,
++		"Scanned %d message(s) with raw MIME archived %s through %s (UTC).\n",
++		plan.messages,
++		since.Format(attachmentRepairDateLayout),
++		until.Format(attachmentRepairDateLayout))
++	if plan.rawMIMEFailures > 0 {
++		_, _ = fmt.Fprintf(out, "Messages whose raw MIME could not be read or parsed: %d\n",
++			plan.rawMIMEFailures)
++	}
++	_, _ = fmt.Fprintf(out,
++		"Attachments to restore: %d (%d without a row, %d with an unreadable file)\n",
++		len(plan.repairs), missingRows, len(plan.repairs)-missingRows)
++	for i, repair := range plan.repairs {
++		if i >= attachmentRepairSampleLimit {
++			_, _ = fmt.Fprintf(out, "  ... and %d more\n",
++				len(plan.repairs)-attachmentRepairSampleLimit)
++			break
++		}
++		reason := "no row"
++		if repair.rowExists {
++			reason = "file unreadable"
++		}
++		_, _ = fmt.Fprintf(out, "  message %d: %q (%s)\n",
++			repair.messageID, repair.attachment.Filename, reason)
++	}
++}
++
++func init() {
++	repairAttachmentsCmd.Flags().StringVar(&repairAttachmentsSince, "since", "",
++		"first archive date to scan (YYYY-MM-DD, UTC)")
++	repairAttachmentsCmd.Flags().StringVar(&repairAttachmentsUntil, "until", "",
++		"last archive date to scan (YYYY-MM-DD, UTC, inclusive)")
++	repairAttachmentsCmd.Flags().BoolVar(&repairAttachmentsApply, "apply", false,
++		"write restored attachments to the archive")
++	_ = repairAttachmentsCmd.MarkFlagRequired("since")
++	_ = repairAttachmentsCmd.MarkFlagRequired("until")
++	rootCmd.AddCommand(repairAttachmentsCmd)
++}
+diff --git a/cmd/msgvault/cmd/repair_attachments_test.go b/cmd/msgvault/cmd/repair_attachments_test.go
+new file mode 100644
+index 0000000..f163d53
+--- /dev/null
++++ b/cmd/msgvault/cmd/repair_attachments_test.go
+@@ -0,0 +1,544 @@
++package cmd
++
++import (
++	"bytes"
++	"context"
++	"encoding/base64"
++	"io"
++	"os"
++	"path/filepath"
++	"testing"
++	"time"
++
++	"github.com/spf13/cobra"
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++	"go.kenn.io/kit/packstore"
++	"go.kenn.io/msgvault/internal/attachmentstore"
++	"go.kenn.io/msgvault/internal/config"
++	"go.kenn.io/msgvault/internal/export"
++	"go.kenn.io/msgvault/internal/mime"
++	"go.kenn.io/msgvault/internal/store"
++	msgsync "go.kenn.io/msgvault/internal/sync"
++)
++
++const attachmentRepairContent = "hello lost attachment"
++
++var (
++	attachmentRepairSince = time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
++	attachmentRepairUntil = time.Date(2026, 9, 16, 0, 0, 0, 0, time.UTC)
++)
++
++func attachmentRepairRawMIME() []byte {
++	return attachmentRepairRawMIMEWith("report.bin", attachmentRepairContent)
++}
++
++func attachmentRepairRawMIMEWith(filename, content string) []byte {
++	return []byte("From: sender@example.com\r\n" +
++		"To: recipient@example.com\r\n" +
++		"Subject: Lost attachment\r\n" +
++		"Date: Tue, 1 Sep 2026 10:00:00 +0000\r\n" +
++		"MIME-Version: 1.0\r\n" +
++		"Content-Type: multipart/mixed; boundary=\"b1\"\r\n" +
++		"\r\n" +
++		"--b1\r\n" +
++		"Content-Type: text/plain\r\n" +
++		"\r\n" +
++		"Body\r\n" +
++		"--b1\r\n" +
++		"Content-Type: application/octet-stream\r\n" +
++		"Content-Disposition: attachment; filename=\"" + filename + "\"\r\n" +
++		"Content-Transfer-Encoding: base64\r\n" +
++		"\r\n" +
++		base64.StdEncoding.EncodeToString([]byte(content)) + "\r\n" +
++		"--b1--\r\n")
++}
++
++type attachmentRepairFixture struct {
++	cfg *config.Config
++	ctx context.Context
++}
++
++func newAttachmentRepairFixture(t *testing.T) *attachmentRepairFixture {
++	t.Helper()
++	dataDir := t.TempDir()
++	cfg := &config.Config{
++		HomeDir: dataDir,
++		Data:    config.DataConfig{DataDir: dataDir},
++	}
++	return &attachmentRepairFixture{
++		cfg: cfg,
++		ctx: testInvocationContext(t.Context(), cfg, invocationOptions{}),
++	}
++}
++
++// seedMessage stores one email whose raw MIME carries an attachment, with no
++// attachment row, as a sync that failed to publish the file leaves it.
++func (f *attachmentRepairFixture) seedMessage(
++	t *testing.T, sourceMessageID string, archivedAt time.Time,
++) int64 {
++	t.Helper()
++	return f.seedMessageRaw(t, sourceMessageID, archivedAt, attachmentRepairRawMIME())
++}
++
++func (f *attachmentRepairFixture) seedMessageRaw(
++	t *testing.T, sourceMessageID string, archivedAt time.Time, raw []byte,
++) int64 {
++	t.Helper()
++	require := require.New(t)
++	st, err := store.OpenForTest(f.cfg.DatabaseDSN())
++	require.NoError(err)
++	defer func() { require.NoError(st.Close()) }()
++	require.NoError(st.InitSchema())
++	source, err := st.GetOrCreateSource("gmail", "archive@example.com")
++	require.NoError(err)
++	conversationID, err := st.EnsureConversation(
++		source.ID, "attachment-repair-thread", "Attachment repair")
++	require.NoError(err)
++	messageID, err := st.UpsertMessage(&store.Message{
++		ConversationID:  conversationID,
++		SourceID:        source.ID,
++		SourceMessageID: sourceMessageID,
++		MessageType:     "email",
++	})
++	require.NoError(err)
++	require.NoError(st.UpsertMessageRaw(messageID, raw))
++	_, err = st.DB().Exec(st.Rebind(`
++		UPDATE messages SET archived_at = ?, has_attachments = FALSE,
++		       attachment_count = 0
++		WHERE id = ?`),
++		archivedAt.UTC().Format("2006-01-02 15:04:05"), messageID)
++	require.NoError(err)
++	return messageID
++}
++
++// storeAttachmentRow writes the message's attachment row and file the way
++// sync does, and returns the stored file's path.
++func (f *attachmentRepairFixture) storeAttachmentRow(t *testing.T, messageID int64) string {
++	t.Helper()
++	return f.storeAttachmentRowAs(t, messageID, false)
++}
++
++// storeAttachmentRowAs with legacy set writes the row the way msgvault 0.19
++// did: no source part key and an unknown role.
++func (f *attachmentRepairFixture) storeAttachmentRowAs(
++	t *testing.T, messageID int64, legacy bool,
++) string {
++	t.Helper()
++	require := require.New(t)
++	parsed, err := mime.Parse(attachmentRepairRawMIME())
++	require.NoError(err)
++	require.Len(parsed.Attachments, 1)
++	write, err := msgsync.StoreMIMEAttachment(f.cfg.AttachmentsDir(), &parsed.Attachments[0])
++	require.NoError(err)
++	require.NotEmpty(write.SourcePartKey)
++	if legacy {
++		write.SourcePartKey = ""
++		write.Role = store.AttachmentRoleUnknown
++		write.RoleSource = store.AttachmentRoleSourceUnknown
++	}
++	st, err := store.OpenForTest(f.cfg.DatabaseDSN())
++	require.NoError(err)
++	defer func() { require.NoError(st.Close()) }()
++	require.NoError(st.UpsertAttachmentRecordWithStats(t.Context(), messageID, write, true))
++	return filepath.Join(f.cfg.AttachmentsDir(), filepath.FromSlash(write.StoragePath))
++}
++
++// packBlob moves the blob into a pack and returns the pack file's path.
++func (f *attachmentRepairFixture) packBlob(t *testing.T, hash string) string {
++	t.Helper()
++	require := require.New(t)
++	st, err := store.OpenForTest(f.cfg.DatabaseDSN())
++	require.NoError(err)
++	defer func() { require.NoError(st.Close()) }()
++	maintenance, err := newAttachmentMaintenance(
++		st, f.cfg.AttachmentsDir(), testDiscardLogger(), true)
++	require.NoError(err)
++	_, err = maintenance.pack(t.Context(), 0)
++	require.NoError(err)
++	require.NoError(maintenance.close())
++	entry, err := st.GetAttachmentPackEntry(hash)
++	require.NoError(err)
++	require.NotNil(entry, "blob %s must be packed", hash)
++	return filepath.Join(f.cfg.AttachmentsDir(), "packs",
++		entry.PackID[:2], entry.PackID+packstore.PackExt)
++}
++
++// blockPackIndexDeletes makes a dead pack mapping impossible to drop, so a
++// restored blob behind it stays unreadable.
++func (f *attachmentRepairFixture) blockPackIndexDeletes(t *testing.T) {
++	t.Helper()
++	require := require.New(t)
++	st, err := store.OpenForTest(f.cfg.DatabaseDSN())
++	require.NoError(err)
++	defer func() { require.NoError(st.Close()) }()
++	_, err = st.DB().Exec(`
++		CREATE TRIGGER reject_pack_index_delete
++		BEFORE DELETE ON attachment_pack_index
++		BEGIN
++			SELECT RAISE(ABORT, 'synthetic pack index failure');
++		END`)
++	require.NoError(err)
++}
++
++func (f *attachmentRepairFixture) run(t *testing.T, apply bool) string {
++	t.Helper()
++	out, err := f.runResult(apply)
++	require.NoError(t, err)
++	return out
++}
++
++func (f *attachmentRepairFixture) runResult(apply bool) (string, error) {
++	var out bytes.Buffer
++	cmd := &cobra.Command{}
++	cmd.SetContext(f.ctx)
++	cmd.SetOut(&out)
++	err := runRepairAttachmentsLocal(
++		cmd, attachmentRepairSince, attachmentRepairUntil, apply)
++	return out.String(), err
++}
++
++type attachmentRepairState struct {
++	rows           int
++	hasAttachments bool
++	contents       []string
++}
++
++// state reads the message's attachment rows and each row's blob through the
++// attachment store, so a packed blob counts as present just as a loose one.
++func (f *attachmentRepairFixture) state(t *testing.T, messageID int64) attachmentRepairState {
++	t.Helper()
++	require := require.New(t)
++	st, err := store.OpenForTest(f.cfg.DatabaseDSN())
++	require.NoError(err)
++	defer func() { require.NoError(st.Close()) }()
++
++	var result attachmentRepairState
++	require.NoError(st.DB().QueryRow(st.Rebind(
++		`SELECT has_attachments FROM messages WHERE id = ?`), messageID).
++		Scan(&result.hasAttachments))
++	rows, err := st.DB().Query(st.Rebind(
++		`SELECT COALESCE(content_hash, '') FROM attachments WHERE message_id = ?`), messageID)
++	require.NoError(err)
++	var hashes []string
++	for rows.Next() {
++		var hash string
++		require.NoError(rows.Scan(&hash))
++		hashes = append(hashes, hash)
++	}
++	require.NoError(rows.Err())
++	require.NoError(rows.Close())
++	result.rows = len(hashes)
++	if len(hashes) == 0 {
++		return result
++	}
++
++	blobs, err := attachmentstore.New(store.NewPackCatalog(st), f.cfg.AttachmentsDir())
++	require.NoError(err)
++	defer func() { require.NoError(blobs.Close()) }()
++	for _, hash := range hashes {
++		reader, _, err := blobs.OpenStream(t.Context(), hash)
++		if err != nil {
++			continue
++		}
++		data, readErr := io.ReadAll(reader)
++		closeErr := reader.Close()
++		if readErr == nil && closeErr == nil {
++			result.contents = append(result.contents, string(data))
++		}
++	}
++	return result
++}
++
++func TestRepairAttachmentsRestoresLostAttachment(t *testing.T) {
++	assert := assert.New(t)
++	f := newAttachmentRepairFixture(t)
++	// The last minute of --until is inside the window.
++	lostID := f.seedMessage(t, "lost-attachment",
++		time.Date(2026, 9, 16, 23, 30, 0, 0, time.UTC))
++	outsideID := f.seedMessage(t, "outside-window",
++		time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC))
++
++	dryRun := f.run(t, false)
++	assert.Contains(dryRun, "Dry run")
++	assert.Equal(0, f.state(t, lostID).rows, "dry run must not write rows")
++
++	f.run(t, true)
++	got := f.state(t, lostID)
++	assert.Equal(1, got.rows)
++	assert.Equal([]string{attachmentRepairContent}, got.contents)
++	assert.True(got.hasAttachments)
++	assert.Equal(0, f.state(t, outsideID).rows, "messages archived outside the window are left alone")
++
++	second := f.run(t, true)
++	assert.Equal(1, f.state(t, lostID).rows, "a second run adds no rows")
++	assert.Contains(second, "Nothing to repair")
++}
++
++func TestRepairAttachmentsRestoresMissingBlobOfSurvivingRow(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	messageID := f.seedMessage(t, "row-survives",
++		time.Date(2026, 8, 20, 9, 0, 0, 0, time.UTC))
++	blobPath := f.storeAttachmentRow(t, messageID)
++	require.NoError(os.Remove(blobPath))
++	before := f.state(t, messageID)
++	require.Equal(1, before.rows)
++	require.Empty(before.contents)
++
++	f.run(t, true)
++	got := f.state(t, messageID)
++	assert.Equal(1, got.rows, "the surviving row is reused, not duplicated")
++	assert.Equal([]string{attachmentRepairContent}, got.contents)
++	assert.True(got.hasAttachments)
++
++	second := f.run(t, true)
++	assert.Equal(1, f.state(t, messageID).rows)
++	assert.Contains(second, "Nothing to repair")
++}
++
++func TestRepairAttachmentsReportsBlobStillUnreadableAfterRestore(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	messageID := f.seedMessage(t, "dead-pack",
++		time.Date(2026, 8, 25, 9, 0, 0, 0, time.UTC))
++	hash := filepath.Base(f.storeAttachmentRow(t, messageID))
++	require.NoError(os.Remove(f.packBlob(t, hash)))
++	f.blockPackIndexDeletes(t)
++	require.Empty(f.state(t, messageID).contents, "a missing pack leaves the blob unreadable")
++
++	out, err := f.runResult(true)
++	require.Error(err, "a blob that still cannot be read is a failure")
++	assert.Contains(err.Error(), hash)
++	assert.Contains(out, "Restored 0 attachment(s).")
++	assert.Empty(f.state(t, messageID).contents)
++}
++
++func TestRepairAttachmentsMatchesLegacyUnkeyedRowByContentHash(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	messageID := f.seedMessage(t, "legacy-row",
++		time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC))
++	blobPath := f.storeAttachmentRowAs(t, messageID, true)
++
++	dryRun := f.run(t, false)
++	assert.Contains(dryRun, "Attachments to restore: 0")
++	assert.Contains(f.run(t, true), "Nothing to repair")
++	assert.Equal(1, f.state(t, messageID).rows, "an intact legacy row gains no keyed twin")
++
++	require.NoError(os.Remove(blobPath))
++	require.Empty(f.state(t, messageID).contents)
++	f.run(t, true)
++	got := f.state(t, messageID)
++	assert.Equal(1, got.rows, "the legacy row is reused, not duplicated")
++	assert.Equal([]string{attachmentRepairContent}, got.contents)
++
++	assert.Contains(f.run(t, true), "Nothing to repair")
++	assert.Equal(1, f.state(t, messageID).rows)
++}
++
++func (f *attachmentRepairFixture) legacyIdentityMigrated(t *testing.T) bool {
++	t.Helper()
++	require := require.New(t)
++	st, err := store.OpenForTest(f.cfg.DatabaseDSN())
++	require.NoError(err)
++	defer func() { require.NoError(st.Close()) }()
++	var count int
++	require.NoError(st.DB().QueryRow(st.Rebind(
++		`SELECT COUNT(*) FROM applied_migrations WHERE name = ?`),
++		"legacy_identity_to_per_account").Scan(&count))
++	return count > 0
++}
++
++func (f *attachmentRepairFixture) buildCache(t *testing.T) {
++	t.Helper()
++	_, err := buildCache(f.cfg.DatabaseDSN(), f.cfg.AnalyticsDir(), true)
++	require.NoError(t, err)
++	require.False(t, f.cacheStale(), "a fresh build leaves the cache current")
++}
++
++func (f *attachmentRepairFixture) cacheStale() bool {
++	return cacheNeedsBuild(f.cfg.DatabaseDSN(), f.cfg.AnalyticsDir()).NeedsBuild
++}
++
++func TestRepairAttachmentsDryRunRunsNoStartupMigrations(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	f.cfg.Identity.Addresses = []string{"archive@example.com"}
++	messageID := f.seedMessage(t, "dry-run",
++		time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC))
++	require.False(f.legacyIdentityMigrated(t), "seeding leaves the identity migration pending")
++
++	out := f.run(t, false)
++	assert.Contains(out, "Attachments to restore: 1")
++	assert.False(f.legacyIdentityMigrated(t), "a dry run must not migrate the archive")
++	assert.Equal(0, f.state(t, messageID).rows)
++}
++
++func TestRepairAttachmentsDryRunRefusesAnOutdatedSchema(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	f.seedMessage(t, "old-schema", time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC))
++	tableExists := func() bool {
++		st, err := store.OpenForTest(f.cfg.DatabaseDSN())
++		require.NoError(err)
++		defer func() { require.NoError(st.Close()) }()
++		var count int
++		require.NoError(st.DB().QueryRow(`SELECT COUNT(*) FROM sqlite_master
++			WHERE type = 'table' AND name = 'attachment_pack_index'`).Scan(&count))
++		return count > 0
++	}
++	st, err := store.OpenForTest(f.cfg.DatabaseDSN())
++	require.NoError(err)
++	_, err = st.DB().Exec(`DROP TABLE attachment_pack_index`)
++	require.NoError(err)
++	require.NoError(st.Close())
++
++	_, err = f.runResult(false)
++	require.Error(err, "a dry run cannot read an archive older than its schema")
++	assert.Contains(err.Error(), "--apply")
++	assert.False(tableExists(), "a dry run must not upgrade the schema")
++}
++
++func TestRepairAttachmentsRefreshesCacheAfterACommittedRowThatStillFails(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	// Both messages carry the same attachment, so the in-window repair writes
++	// a hash the catalog still resolves to the dead pack.
++	ownerID := f.seedMessage(t, "dead-pack-owner",
++		time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC))
++	hash := filepath.Base(f.storeAttachmentRow(t, ownerID))
++	require.NoError(os.Remove(f.packBlob(t, hash)))
++	f.blockPackIndexDeletes(t)
++	messageID := f.seedMessage(t, "shares-dead-hash",
++		time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC))
++	f.buildCache(t)
++
++	_, err := f.runResult(true)
++	require.Error(err)
++	assert.Contains(err.Error(), hash)
++	assert.Equal(1, f.state(t, messageID).rows, "the row commits before verification")
++	assert.False(f.cacheStale(), "a committed row must reach the analytics cache")
++}
++
++func TestRepairAttachmentsRetryFinishesAPendingCacheRefresh(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	messageID := f.seedMessage(t, "restored-cache-stale",
++		time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC))
++	f.buildCache(t)
++	// A restore that committed before its cache refresh failed.
++	f.storeAttachmentRow(t, messageID)
++	require.True(f.cacheStale())
++
++	assert.Contains(f.run(t, true), "Nothing to repair")
++	assert.False(f.cacheStale(), "a retry must finish the cache refresh")
++}
++
++func TestRepairAttachmentsRejectsPostgreSQL(t *testing.T) {
++	f := newAttachmentRepairFixture(t)
++	f.cfg.Data.DatabaseURL = "postgres://user:pass@127.0.0.1:1/msgvault"
++	for _, apply := range []bool{false, true} {
++		_, err := f.runResult(apply)
++		require.Error(t, err)
++		assert.Contains(t, err.Error(), "SQLite archives only")
++		assert.NotContains(t, err.Error(), "ping", "the store must not be opened")
++	}
++}
++
++func TestRepairAttachmentsRestoresBlobBehindDeadPack(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	messageID := f.seedMessage(t, "restores-dead-pack",
++		time.Date(2026, 8, 25, 9, 0, 0, 0, time.UTC))
++	hash := filepath.Base(f.storeAttachmentRow(t, messageID))
++	require.NoError(os.Remove(f.packBlob(t, hash)))
++	require.Empty(f.state(t, messageID).contents, "a missing pack leaves the blob unreadable")
++
++	out, err := f.runResult(true)
++	require.NoError(err)
++	assert.Contains(out, "Restored 1 attachment(s).")
++	got := f.state(t, messageID)
++	assert.Equal(1, got.rows)
++	assert.Equal([]string{attachmentRepairContent}, got.contents)
++	assert.Contains(f.run(t, true), "Nothing to repair")
++}
++
++func TestRepairAttachmentsRestoresEmptyBlobOfSurvivingRow(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	raw := attachmentRepairRawMIMEWith("empty.bin", "")
++	messageID := f.seedMessageRaw(t, "empty-attachment",
++		time.Date(2026, 8, 22, 9, 0, 0, 0, time.UTC), raw)
++
++	parsed, err := mime.Parse(raw)
++	require.NoError(err)
++	require.Len(parsed.Attachments, 1)
++	att := &parsed.Attachments[0]
++	require.NotNil(att.Content)
++	require.Empty(att.Content)
++	require.NotEmpty(att.PartKey)
++	// Maintenance that relocates a message stores empty parts too.
++	storagePath, err := export.StoreAttachmentFileIncludingEmpty(f.cfg.AttachmentsDir(), att)
++	require.NoError(err)
++	require.NotEmpty(storagePath)
++	role, roleSource := store.AttachmentRoleFromMIME(att.Disposition, att.IsInline, att.ContentID)
++	st, err := store.OpenForTest(f.cfg.DatabaseDSN())
++	require.NoError(err)
++	require.NoError(st.UpsertAttachmentRecordWithStats(t.Context(), messageID, store.AttachmentWrite{
++		Filename:      att.Filename,
++		MIMEType:      att.ContentType,
++		StoragePath:   storagePath,
++		ContentHash:   att.ContentHash,
++		Role:          role,
++		RoleSource:    roleSource,
++		SourcePartKey: att.PartKey,
++		ContentID:     att.ContentID,
++	}, true))
++	require.NoError(st.Close())
++	require.Equal([]string{""}, f.state(t, messageID).contents, "an empty blob reads back")
++	require.NoError(os.Remove(filepath.Join(f.cfg.AttachmentsDir(), filepath.FromSlash(storagePath))))
++	require.Empty(f.state(t, messageID).contents)
++
++	out, err := f.runResult(true)
++	require.NoError(err)
++	assert.Contains(out, "Restored 1 attachment(s).")
++	got := f.state(t, messageID)
++	assert.Equal(1, got.rows)
++	assert.Equal([]string{""}, got.contents)
++}
++
++func TestRepairAttachmentsFailsWhenRawMIMECannotBeRead(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	lostID := f.seedMessage(t, "readable-raw",
++		time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC))
++	badID := f.seedMessage(t, "unreadable-raw",
++		time.Date(2026, 9, 2, 9, 0, 0, 0, time.UTC))
++	st, err := store.OpenForTest(f.cfg.DatabaseDSN())
++	require.NoError(err)
++	_, err = st.DB().Exec(st.Rebind(`UPDATE message_raw
++		SET raw_data = ?, compression = 'zlib' WHERE message_id = ?`),
++		[]byte("not zlib"), badID)
++	require.NoError(err)
++	require.NoError(st.Close())
++
++	for _, apply := range []bool{false, true} {
++		out, err := f.runResult(apply)
++		assert.Contains(out, "Messages whose raw MIME could not be read or parsed: 1")
++		require.Error(err, "apply=%v: a skipped message must fail the run", apply)
++		assert.Contains(err.Error(), "raw MIME")
++	}
++	assert.Equal([]string{attachmentRepairContent}, f.state(t, lostID).contents,
++		"the readable message is still restored")
++}
