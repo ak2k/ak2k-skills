@@ -1,9 +1,9 @@
 diff --git a/cmd/msgvault/cmd/repair_attachments.go b/cmd/msgvault/cmd/repair_attachments.go
 new file mode 100644
-index 0000000..3437f7d
+index 0000000..c31c2bb
 --- /dev/null
 +++ b/cmd/msgvault/cmd/repair_attachments.go
-@@ -0,0 +1,364 @@
+@@ -0,0 +1,368 @@
 +package cmd
 +
 +import (
@@ -66,7 +66,7 @@ index 0000000..3437f7d
 +	// rowExists marks a surviving row whose file cannot be read.
 +	rowExists bool
 +	// unkeyedRow marks a match on a row stored without a source part key;
-+	// writing the key would insert a second row beside it.
++	// writing the key can insert a second row beside it.
 +	unkeyedRow bool
 +}
 +
@@ -137,6 +137,10 @@ index 0000000..3437f7d
 +				write.SourcePartKey = ""
 +			}
 +			err = st.UpsertAttachmentRecordWithStats(ctx, repair.messageID, write, true)
++		}
++		if err == nil && !attachmentBlobReadable(ctx, blobs, write.ContentHash) {
++			err = fmt.Errorf("attachment %s still cannot be read after the restore",
++				write.ContentHash)
 +		}
 +		if err != nil {
 +			failures = append(failures, fmt.Errorf("message %d part %q: %w",
@@ -280,8 +284,8 @@ index 0000000..3437f7d
 +	return result, rows.Err()
 +}
 +
-+// matchAttachmentRepairRow finds the row sync would have written for att:
-+// keyed by source part, or a row stored without a key and the same content.
++// matchAttachmentRepairRow finds the row sync would have written for att: by
++// source_part_key, or by content hash for rows written without one.
 +func matchAttachmentRepairRow(
 +	rows []attachmentRepairRow,
 +	att mime.Attachment,
