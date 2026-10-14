@@ -1,19 +1,29 @@
 diff --git a/cmd/msgvault/cmd/repair_attachments.go b/cmd/msgvault/cmd/repair_attachments.go
 new file mode 100644
-index 0000000..fb97f8a
+index 0000000..3437f7d
 --- /dev/null
 +++ b/cmd/msgvault/cmd/repair_attachments.go
-@@ -0,0 +1,65 @@
+@@ -0,0 +1,364 @@
 +package cmd
 +
 +import (
++	"context"
++	"errors"
 +	"fmt"
++	"io"
 +	"time"
 +
 +	"github.com/spf13/cobra"
++	"go.kenn.io/msgvault/internal/attachmentstore"
++	"go.kenn.io/msgvault/internal/mime"
++	"go.kenn.io/msgvault/internal/store"
++	msgsync "go.kenn.io/msgvault/internal/sync"
 +)
 +
-+const attachmentRepairDateLayout = "2006-01-02"
++const (
++	attachmentRepairDateLayout  = "2006-01-02"
++	attachmentRepairSampleLimit = 10
++)
 +
 +var (
 +	repairAttachmentsSince string
@@ -50,12 +60,301 @@ index 0000000..fb97f8a
 +	},
 +}
 +
++type plannedAttachmentRepair struct {
++	messageID  int64
++	attachment mime.Attachment
++	// rowExists marks a surviving row whose file cannot be read.
++	rowExists bool
++	// unkeyedRow marks a match on a row stored without a source part key;
++	// writing the key would insert a second row beside it.
++	unkeyedRow bool
++}
++
++type attachmentRepairPlan struct {
++	messages        int
++	rawMIMEFailures int
++	repairs         []plannedAttachmentRepair
++}
++
++// runRepairAttachmentsLocal never forwards to a daemon: the daemon runs only
++// allowlisted commands, and the write-owner lock taken here makes the repair
++// fail rather than race a running daemon.
 +func runRepairAttachmentsLocal(
 +	cmd *cobra.Command,
 +	since, until time.Time,
 +	apply bool,
-+) error {
++) (runErr error) {
++	ctx := cmd.Context()
++	state := invocationFromCommand(cmd)
++	if state == nil || state.cfg == nil {
++		return errors.New("configuration is unavailable")
++	}
++	cfg := state.cfg
++	st, cleanup, err := openWritableStoreAndInitForInvocation(state)
++	if err != nil {
++		return err
++	}
++	defer cleanup()
++
++	blobs, err := attachmentstore.New(store.NewPackCatalog(st), cfg.AttachmentsDir())
++	if err != nil {
++		return err
++	}
++	defer func() { runErr = errors.Join(runErr, blobs.Close()) }()
++
++	plan, err := planAttachmentRepairs(ctx, st, blobs, cfg.DatabaseDSN(),
++		since, until.AddDate(0, 0, 1))
++	if err != nil {
++		return err
++	}
++	out := cmd.OutOrStdout()
++	printAttachmentRepairPlan(out, plan, since, until)
++
++	if !apply {
++		_, err := fmt.Fprintln(out,
++			"\nDry run: nothing was written. Re-run with --apply to restore.")
++		return err
++	}
++	if len(plan.repairs) == 0 {
++		_, err := fmt.Fprintln(out, "Nothing to repair.")
++		return err
++	}
++
++	restored := 0
++	var failures []error
++	for _, repair := range plan.repairs {
++		if err := ctx.Err(); err != nil {
++			failures = append(failures, err)
++			break
++		}
++		att := repair.attachment
++		write, err := msgsync.StoreMIMEAttachment(cfg.AttachmentsDir(), &att)
++		if err == nil && write.StoragePath == "" {
++			err = errors.New("attachment file was not stored")
++		}
++		if err == nil {
++			if repair.unkeyedRow {
++				write.SourcePartKey = ""
++			}
++			err = st.UpsertAttachmentRecordWithStats(ctx, repair.messageID, write, true)
++		}
++		if err != nil {
++			failures = append(failures, fmt.Errorf("message %d part %q: %w",
++				repair.messageID, repair.attachment.PartKey, err))
++			continue
++		}
++		restored++
++	}
++	if _, err := fmt.Fprintf(out, "Restored %d attachment(s).\n", restored); err != nil {
++		failures = append(failures, err)
++	}
++	if restored > 0 {
++		if err := rebuildCacheAfterWrite(cfg.DatabaseDSN(), state); err != nil {
++			failures = append(failures, err)
++		}
++	}
++	if len(failures) > 0 {
++		return fmt.Errorf("repair-attachments: %d error(s): %w",
++			len(failures), errors.Join(failures...))
++	}
 +	return nil
++}
++
++type attachmentRepairRow struct {
++	sourcePartKey string
++	contentHash   string
++}
++
++func planAttachmentRepairs(
++	ctx context.Context,
++	st *store.Store,
++	blobs *attachmentstore.Store,
++	dsn string,
++	from, to time.Time,
++) (*attachmentRepairPlan, error) {
++	messageIDs, err := listMIMEMessagesArchivedBetween(ctx, st, dsn, from, to)
++	if err != nil {
++		return nil, err
++	}
++	plan := &attachmentRepairPlan{messages: len(messageIDs)}
++	for _, messageID := range messageIDs {
++		if err := ctx.Err(); err != nil {
++			return nil, err
++		}
++		raw, err := st.GetMessageRawContext(ctx, messageID)
++		if err != nil {
++			plan.rawMIMEFailures++
++			continue
++		}
++		parsed, err := mime.Parse(raw)
++		if err != nil {
++			plan.rawMIMEFailures++
++			continue
++		}
++		if len(parsed.Attachments) == 0 {
++			continue
++		}
++		rows, err := listAttachmentRepairRows(ctx, st, messageID)
++		if err != nil {
++			return nil, err
++		}
++		for _, att := range parsed.Attachments {
++			// Sync never stores an empty part, so none is missing.
++			if len(att.Content) == 0 {
++				continue
++			}
++			row, unkeyed, found := matchAttachmentRepairRow(rows, att)
++			if found && attachmentBlobReadable(ctx, blobs, row.contentHash) {
++				continue
++			}
++			plan.repairs = append(plan.repairs, plannedAttachmentRepair{
++				messageID:  messageID,
++				attachment: att,
++				rowExists:  found,
++				unkeyedRow: unkeyed,
++			})
++		}
++	}
++	return plan, nil
++}
++
++func listMIMEMessagesArchivedBetween(
++	ctx context.Context,
++	st *store.Store,
++	dsn string,
++	from, to time.Time,
++) ([]int64, error) {
++	rows, err := st.DB().QueryContext(ctx, st.Rebind(`
++		SELECT m.id
++		FROM messages m
++		JOIN message_raw mr ON mr.message_id = m.id AND mr.raw_format = 'mime'
++		WHERE m.archived_at >= ? AND m.archived_at < ?
++		ORDER BY m.id
++	`), archiveTimeArg(dsn, from), archiveTimeArg(dsn, to))
++	if err != nil {
++		return nil, fmt.Errorf("list messages archived in window: %w", err)
++	}
++	defer func() { _ = rows.Close() }()
++	var ids []int64
++	for rows.Next() {
++		var id int64
++		if err := rows.Scan(&id); err != nil {
++			return nil, fmt.Errorf("scan archived message id: %w", err)
++		}
++		ids = append(ids, id)
++	}
++	return ids, rows.Err()
++}
++
++// archiveTimeArg matches SQLite's CURRENT_TIMESTAMP text layout, which is how
++// archived_at is stored there; a driver-formatted time would compare as text
++// against a different layout.
++func archiveTimeArg(dsn string, t time.Time) any {
++	if store.IsPostgresURL(dsn) {
++		return t.UTC()
++	}
++	return t.UTC().Format("2006-01-02 15:04:05")
++}
++
++func listAttachmentRepairRows(
++	ctx context.Context,
++	st *store.Store,
++	messageID int64,
++) ([]attachmentRepairRow, error) {
++	rows, err := st.DB().QueryContext(ctx, st.Rebind(`
++		SELECT COALESCE(source_part_key, ''), COALESCE(content_hash, '')
++		FROM attachments WHERE message_id = ?
++	`), messageID)
++	if err != nil {
++		return nil, fmt.Errorf("list attachments of message %d: %w", messageID, err)
++	}
++	defer func() { _ = rows.Close() }()
++	var result []attachmentRepairRow
++	for rows.Next() {
++		var row attachmentRepairRow
++		if err := rows.Scan(&row.sourcePartKey, &row.contentHash); err != nil {
++			return nil, fmt.Errorf("scan attachment of message %d: %w", messageID, err)
++		}
++		result = append(result, row)
++	}
++	return result, rows.Err()
++}
++
++// matchAttachmentRepairRow finds the row sync would have written for att:
++// keyed by source part, or a row stored without a key and the same content.
++func matchAttachmentRepairRow(
++	rows []attachmentRepairRow,
++	att mime.Attachment,
++) (row attachmentRepairRow, unkeyed, found bool) {
++	if att.PartKey != "" {
++		for _, r := range rows {
++			if r.sourcePartKey == att.PartKey {
++				return r, false, true
++			}
++		}
++	}
++	for _, r := range rows {
++		if r.sourcePartKey == "" && r.contentHash == att.ContentHash {
++			return r, true, true
++		}
++	}
++	return attachmentRepairRow{}, false, false
++}
++
++// attachmentBlobReadable reads the whole blob through the attachment store, so
++// a packed blob counts as present and a truncated or corrupt one does not.
++func attachmentBlobReadable(
++	ctx context.Context,
++	blobs *attachmentstore.Store,
++	hash string,
++) bool {
++	if hash == "" {
++		return false
++	}
++	reader, _, err := blobs.OpenStream(ctx, hash)
++	if err != nil {
++		return false
++	}
++	_, copyErr := io.Copy(io.Discard, reader)
++	return errors.Join(copyErr, reader.Close()) == nil
++}
++
++func printAttachmentRepairPlan(
++	out io.Writer,
++	plan *attachmentRepairPlan,
++	since, until time.Time,
++) {
++	missingRows := 0
++	for _, repair := range plan.repairs {
++		if !repair.rowExists {
++			missingRows++
++		}
++	}
++	_, _ = fmt.Fprintf(out,
++		"Scanned %d message(s) with raw MIME archived %s through %s (UTC).\n",
++		plan.messages,
++		since.Format(attachmentRepairDateLayout),
++		until.Format(attachmentRepairDateLayout))
++	if plan.rawMIMEFailures > 0 {
++		_, _ = fmt.Fprintf(out, "Messages whose raw MIME could not be read or parsed: %d\n",
++			plan.rawMIMEFailures)
++	}
++	_, _ = fmt.Fprintf(out,
++		"Attachments to restore: %d (%d without a row, %d with an unreadable file)\n",
++		len(plan.repairs), missingRows, len(plan.repairs)-missingRows)
++	for i, repair := range plan.repairs {
++		if i >= attachmentRepairSampleLimit {
++			_, _ = fmt.Fprintf(out, "  ... and %d more\n",
++				len(plan.repairs)-attachmentRepairSampleLimit)
++			break
++		}
++		reason := "no row"
++		if repair.rowExists {
++			reason = "file unreadable"
++		}
++		_, _ = fmt.Fprintf(out, "  message %d: %q (%s)\n",
++			repair.messageID, repair.attachment.Filename, reason)
++	}
 +}
 +
 +func init() {
