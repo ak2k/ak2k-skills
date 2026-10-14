@@ -1,9 +1,9 @@
 diff --git a/cmd/msgvault/cmd/repair_attachments.go b/cmd/msgvault/cmd/repair_attachments.go
 new file mode 100644
-index 0000000..495d8dc
+index 0000000..f320198
 --- /dev/null
 +++ b/cmd/msgvault/cmd/repair_attachments.go
-@@ -0,0 +1,422 @@
+@@ -0,0 +1,448 @@
 +package cmd
 +
 +import (
@@ -15,6 +15,7 @@ index 0000000..495d8dc
 +
 +	"github.com/spf13/cobra"
 +	"go.kenn.io/msgvault/internal/attachmentstore"
++	"go.kenn.io/msgvault/internal/export"
 +	"go.kenn.io/msgvault/internal/mime"
 +	"go.kenn.io/msgvault/internal/store"
 +	msgsync "go.kenn.io/msgvault/internal/sync"
@@ -131,7 +132,7 @@ index 0000000..495d8dc
 +			break
 +		}
 +		att := repair.attachment
-+		write, err := msgsync.StoreMIMEAttachment(cfg.AttachmentsDir(), &att)
++		write, err := storeRepairedAttachment(cfg.AttachmentsDir(), &att)
 +		if err == nil && write.StoragePath == "" {
 +			err = errors.New("attachment file was not stored")
 +		}
@@ -223,6 +224,30 @@ index 0000000..495d8dc
 +	return rows.Close()
 +}
 +
++// storeRepairedAttachment also publishes an empty part, which sync skips but
++// relocation stores.
++func storeRepairedAttachment(attachmentsDir string, att *mime.Attachment) (store.AttachmentWrite, error) {
++	if len(att.Content) > 0 {
++		return msgsync.StoreMIMEAttachment(attachmentsDir, att)
++	}
++	storagePath, err := export.StoreAttachmentFileIncludingEmpty(attachmentsDir, att)
++	if err != nil || storagePath == "" {
++		return store.AttachmentWrite{}, err
++	}
++	role, roleSource := store.AttachmentRoleFromMIME(
++		att.Disposition, att.IsInline, att.ContentID)
++	return store.AttachmentWrite{
++		Filename:      att.Filename,
++		MIMEType:      att.ContentType,
++		StoragePath:   storagePath,
++		ContentHash:   att.ContentHash,
++		Role:          role,
++		RoleSource:    roleSource,
++		SourcePartKey: att.PartKey,
++		ContentID:     att.ContentID,
++	}, nil
++}
++
 +type attachmentRepairRow struct {
 +	sourcePartKey string
 +	contentHash   string
@@ -261,12 +286,13 @@ index 0000000..495d8dc
 +			return nil, err
 +		}
 +		for _, att := range parsed.Attachments {
-+			// Sync never stores an empty part, so none is missing.
-+			if len(att.Content) == 0 {
-+				continue
-+			}
 +			row, unkeyed, found := matchAttachmentRepairRow(rows, att)
 +			if found && attachmentBlobReadable(ctx, blobs, row.contentHash) {
++				continue
++			}
++			// Sync never stores an empty part, so only a surviving row marks
++			// one as lost.
++			if !found && len(att.Content) == 0 {
 +				continue
 +			}
 +			plan.repairs = append(plan.repairs, plannedAttachmentRepair{
