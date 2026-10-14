@@ -428,10 +428,10 @@ index 0000000..495d8dc
 +}
 diff --git a/cmd/msgvault/cmd/repair_attachments_test.go b/cmd/msgvault/cmd/repair_attachments_test.go
 new file mode 100644
-index 0000000..48c2c47
+index 0000000..f163d53
 --- /dev/null
 +++ b/cmd/msgvault/cmd/repair_attachments_test.go
-@@ -0,0 +1,423 @@
+@@ -0,0 +1,544 @@
 +package cmd
 +
 +import (
@@ -450,6 +450,7 @@ index 0000000..48c2c47
 +	"go.kenn.io/kit/packstore"
 +	"go.kenn.io/msgvault/internal/attachmentstore"
 +	"go.kenn.io/msgvault/internal/config"
++	"go.kenn.io/msgvault/internal/export"
 +	"go.kenn.io/msgvault/internal/mime"
 +	"go.kenn.io/msgvault/internal/store"
 +	msgsync "go.kenn.io/msgvault/internal/sync"
@@ -463,6 +464,10 @@ index 0000000..48c2c47
 +)
 +
 +func attachmentRepairRawMIME() []byte {
++	return attachmentRepairRawMIMEWith("report.bin", attachmentRepairContent)
++}
++
++func attachmentRepairRawMIMEWith(filename, content string) []byte {
 +	return []byte("From: sender@example.com\r\n" +
 +		"To: recipient@example.com\r\n" +
 +		"Subject: Lost attachment\r\n" +
@@ -476,10 +481,10 @@ index 0000000..48c2c47
 +		"Body\r\n" +
 +		"--b1\r\n" +
 +		"Content-Type: application/octet-stream\r\n" +
-+		"Content-Disposition: attachment; filename=\"report.bin\"\r\n" +
++		"Content-Disposition: attachment; filename=\"" + filename + "\"\r\n" +
 +		"Content-Transfer-Encoding: base64\r\n" +
 +		"\r\n" +
-+		base64.StdEncoding.EncodeToString([]byte(attachmentRepairContent)) + "\r\n" +
++		base64.StdEncoding.EncodeToString([]byte(content)) + "\r\n" +
 +		"--b1--\r\n")
 +}
 +
@@ -507,6 +512,13 @@ index 0000000..48c2c47
 +	t *testing.T, sourceMessageID string, archivedAt time.Time,
 +) int64 {
 +	t.Helper()
++	return f.seedMessageRaw(t, sourceMessageID, archivedAt, attachmentRepairRawMIME())
++}
++
++func (f *attachmentRepairFixture) seedMessageRaw(
++	t *testing.T, sourceMessageID string, archivedAt time.Time, raw []byte,
++) int64 {
++	t.Helper()
 +	require := require.New(t)
 +	st, err := store.OpenForTest(f.cfg.DatabaseDSN())
 +	require.NoError(err)
@@ -524,7 +536,7 @@ index 0000000..48c2c47
 +		MessageType:     "email",
 +	})
 +	require.NoError(err)
-+	require.NoError(st.UpsertMessageRaw(messageID, attachmentRepairRawMIME()))
++	require.NoError(st.UpsertMessageRaw(messageID, raw))
 +	_, err = st.DB().Exec(st.Rebind(`
 +		UPDATE messages SET archived_at = ?, has_attachments = FALSE,
 +		       attachment_count = 0
@@ -584,6 +596,23 @@ index 0000000..48c2c47
 +	require.NotNil(entry, "blob %s must be packed", hash)
 +	return filepath.Join(f.cfg.AttachmentsDir(), "packs",
 +		entry.PackID[:2], entry.PackID+packstore.PackExt)
++}
++
++// blockPackIndexDeletes makes a dead pack mapping impossible to drop, so a
++// restored blob behind it stays unreadable.
++func (f *attachmentRepairFixture) blockPackIndexDeletes(t *testing.T) {
++	t.Helper()
++	require := require.New(t)
++	st, err := store.OpenForTest(f.cfg.DatabaseDSN())
++	require.NoError(err)
++	defer func() { require.NoError(st.Close()) }()
++	_, err = st.DB().Exec(`
++		CREATE TRIGGER reject_pack_index_delete
++		BEFORE DELETE ON attachment_pack_index
++		BEGIN
++			SELECT RAISE(ABORT, 'synthetic pack index failure');
++		END`)
++	require.NoError(err)
 +}
 +
 +func (f *attachmentRepairFixture) run(t *testing.T, apply bool) string {
@@ -711,6 +740,7 @@ index 0000000..48c2c47
 +		time.Date(2026, 8, 25, 9, 0, 0, 0, time.UTC))
 +	hash := filepath.Base(f.storeAttachmentRow(t, messageID))
 +	require.NoError(os.Remove(f.packBlob(t, hash)))
++	f.blockPackIndexDeletes(t)
 +	require.Empty(f.state(t, messageID).contents, "a missing pack leaves the blob unreadable")
 +
 +	out, err := f.runResult(true)
@@ -819,6 +849,7 @@ index 0000000..48c2c47
 +		time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC))
 +	hash := filepath.Base(f.storeAttachmentRow(t, ownerID))
 +	require.NoError(os.Remove(f.packBlob(t, hash)))
++	f.blockPackIndexDeletes(t)
 +	messageID := f.seedMessage(t, "shares-dead-hash",
 +		time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC))
 +	f.buildCache(t)
@@ -854,4 +885,94 @@ index 0000000..48c2c47
 +		assert.Contains(t, err.Error(), "SQLite archives only")
 +		assert.NotContains(t, err.Error(), "ping", "the store must not be opened")
 +	}
++}
++
++func TestRepairAttachmentsRestoresBlobBehindDeadPack(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	messageID := f.seedMessage(t, "restores-dead-pack",
++		time.Date(2026, 8, 25, 9, 0, 0, 0, time.UTC))
++	hash := filepath.Base(f.storeAttachmentRow(t, messageID))
++	require.NoError(os.Remove(f.packBlob(t, hash)))
++	require.Empty(f.state(t, messageID).contents, "a missing pack leaves the blob unreadable")
++
++	out, err := f.runResult(true)
++	require.NoError(err)
++	assert.Contains(out, "Restored 1 attachment(s).")
++	got := f.state(t, messageID)
++	assert.Equal(1, got.rows)
++	assert.Equal([]string{attachmentRepairContent}, got.contents)
++	assert.Contains(f.run(t, true), "Nothing to repair")
++}
++
++func TestRepairAttachmentsRestoresEmptyBlobOfSurvivingRow(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	raw := attachmentRepairRawMIMEWith("empty.bin", "")
++	messageID := f.seedMessageRaw(t, "empty-attachment",
++		time.Date(2026, 8, 22, 9, 0, 0, 0, time.UTC), raw)
++
++	parsed, err := mime.Parse(raw)
++	require.NoError(err)
++	require.Len(parsed.Attachments, 1)
++	att := &parsed.Attachments[0]
++	require.NotNil(att.Content)
++	require.Empty(att.Content)
++	require.NotEmpty(att.PartKey)
++	// Maintenance that relocates a message stores empty parts too.
++	storagePath, err := export.StoreAttachmentFileIncludingEmpty(f.cfg.AttachmentsDir(), att)
++	require.NoError(err)
++	require.NotEmpty(storagePath)
++	role, roleSource := store.AttachmentRoleFromMIME(att.Disposition, att.IsInline, att.ContentID)
++	st, err := store.OpenForTest(f.cfg.DatabaseDSN())
++	require.NoError(err)
++	require.NoError(st.UpsertAttachmentRecordWithStats(t.Context(), messageID, store.AttachmentWrite{
++		Filename:      att.Filename,
++		MIMEType:      att.ContentType,
++		StoragePath:   storagePath,
++		ContentHash:   att.ContentHash,
++		Role:          role,
++		RoleSource:    roleSource,
++		SourcePartKey: att.PartKey,
++		ContentID:     att.ContentID,
++	}, true))
++	require.NoError(st.Close())
++	require.Equal([]string{""}, f.state(t, messageID).contents, "an empty blob reads back")
++	require.NoError(os.Remove(filepath.Join(f.cfg.AttachmentsDir(), filepath.FromSlash(storagePath))))
++	require.Empty(f.state(t, messageID).contents)
++
++	out, err := f.runResult(true)
++	require.NoError(err)
++	assert.Contains(out, "Restored 1 attachment(s).")
++	got := f.state(t, messageID)
++	assert.Equal(1, got.rows)
++	assert.Equal([]string{""}, got.contents)
++}
++
++func TestRepairAttachmentsFailsWhenRawMIMECannotBeRead(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	lostID := f.seedMessage(t, "readable-raw",
++		time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC))
++	badID := f.seedMessage(t, "unreadable-raw",
++		time.Date(2026, 9, 2, 9, 0, 0, 0, time.UTC))
++	st, err := store.OpenForTest(f.cfg.DatabaseDSN())
++	require.NoError(err)
++	_, err = st.DB().Exec(st.Rebind(`UPDATE message_raw
++		SET raw_data = ?, compression = 'zlib' WHERE message_id = ?`),
++		[]byte("not zlib"), badID)
++	require.NoError(err)
++	require.NoError(st.Close())
++
++	for _, apply := range []bool{false, true} {
++		out, err := f.runResult(apply)
++		assert.Contains(out, "Messages whose raw MIME could not be read or parsed: 1")
++		require.Error(err, "apply=%v: a skipped message must fail the run", apply)
++		assert.Contains(err.Error(), "raw MIME")
++	}
++	assert.Equal([]string{attachmentRepairContent}, f.state(t, lostID).contents,
++		"the readable message is still restored")
 +}
