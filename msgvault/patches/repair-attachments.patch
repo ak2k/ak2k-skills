@@ -1,9 +1,9 @@
 diff --git a/cmd/msgvault/cmd/repair_attachments.go b/cmd/msgvault/cmd/repair_attachments.go
 new file mode 100644
-index 0000000..f320198
+index 0000000..31f8c49
 --- /dev/null
 +++ b/cmd/msgvault/cmd/repair_attachments.go
-@@ -0,0 +1,448 @@
+@@ -0,0 +1,476 @@
 +package cmd
 +
 +import (
@@ -143,8 +143,7 @@ index 0000000..f320198
 +			err = st.UpsertAttachmentRecordWithStats(ctx, repair.messageID, write, true)
 +		}
 +		if err == nil && !attachmentBlobReadable(ctx, blobs, write.ContentHash) {
-+			err = fmt.Errorf("attachment %s still cannot be read after the restore",
-+				write.ContentHash)
++			err = dropDeadPackEntry(ctx, st, blobs, write.ContentHash)
 +		}
 +		if err != nil {
 +			failures = append(failures, fmt.Errorf("message %d part %q: %w",
@@ -222,6 +221,35 @@ index 0000000..f320198
 +		return upgradeErr(err)
 +	}
 +	return rows.Close()
++}
++
++// dropDeadPackEntry lets the restored loose copy serve a blob whose pack can no
++// longer be read: the catalog serves a pack index entry in preference to a
++// loose file, and the loose copy was written against the expected hash.
++func dropDeadPackEntry(
++	ctx context.Context,
++	st *store.Store,
++	blobs *attachmentstore.Store,
++	hash string,
++) error {
++	unreadable := fmt.Errorf("attachment %s still cannot be read after the restore", hash)
++	if err := ctx.Err(); err != nil {
++		return errors.Join(unreadable, err)
++	}
++	entry, err := st.GetAttachmentPackEntry(hash)
++	if err != nil {
++		return errors.Join(unreadable, err)
++	}
++	if entry == nil {
++		return unreadable
++	}
++	if err := st.DeletePackIndexEntryContext(ctx, hash); err != nil {
++		return errors.Join(unreadable, err)
++	}
++	if !attachmentBlobReadable(ctx, blobs, hash) {
++		return unreadable
++	}
++	return nil
 +}
 +
 +// storeRepairedAttachment also publishes an empty part, which sync skips but
