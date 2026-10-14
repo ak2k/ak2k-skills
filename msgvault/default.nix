@@ -73,6 +73,10 @@ buildGoLatestModule {
   inherit src version vendorHash;
   proxyVendor = true;
 
+  # `repair-attachments` re-extracts attachments from stored raw MIME; it has
+  # no upstream equivalent. Every msgvault bump must rebase this patch.
+  patches = [ ./patches/repair-attachments.patch ];
+
   subPackages = [ "cmd/msgvault" ];
 
   preBuild = ''

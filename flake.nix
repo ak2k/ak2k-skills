@@ -302,6 +302,18 @@
                 }
                 touch $out
               '';
+
+              # The package skips upstream's suite; this runs only the tests of
+              # the local repair-attachments patch, against the same build.
+              msgvault-repair-attachments = msgvaultPkg.overrideAttrs (_: {
+                doCheck = true;
+                checkPhase = ''
+                  runHook preCheck
+                  export HOME=$TMPDIR
+                  go test -tags 'fts5 sqlite_vec' -run TestRepairAttachments -v ./cmd/msgvault/cmd/
+                  runHook postCheck
+                '';
+              });
             };
 
           treefmt = {
