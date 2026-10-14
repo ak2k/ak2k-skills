@@ -374,10 +374,10 @@ index 0000000..c31c2bb
 +}
 diff --git a/cmd/msgvault/cmd/repair_attachments_test.go b/cmd/msgvault/cmd/repair_attachments_test.go
 new file mode 100644
-index 0000000..9abd5e8
+index 0000000..48c2c47
 --- /dev/null
 +++ b/cmd/msgvault/cmd/repair_attachments_test.go
-@@ -0,0 +1,311 @@
+@@ -0,0 +1,423 @@
 +package cmd
 +
 +import (
@@ -688,4 +688,116 @@ index 0000000..9abd5e8
 +
 +	assert.Contains(f.run(t, true), "Nothing to repair")
 +	assert.Equal(1, f.state(t, messageID).rows)
++}
++
++func (f *attachmentRepairFixture) legacyIdentityMigrated(t *testing.T) bool {
++	t.Helper()
++	require := require.New(t)
++	st, err := store.OpenForTest(f.cfg.DatabaseDSN())
++	require.NoError(err)
++	defer func() { require.NoError(st.Close()) }()
++	var count int
++	require.NoError(st.DB().QueryRow(st.Rebind(
++		`SELECT COUNT(*) FROM applied_migrations WHERE name = ?`),
++		"legacy_identity_to_per_account").Scan(&count))
++	return count > 0
++}
++
++func (f *attachmentRepairFixture) buildCache(t *testing.T) {
++	t.Helper()
++	_, err := buildCache(f.cfg.DatabaseDSN(), f.cfg.AnalyticsDir(), true)
++	require.NoError(t, err)
++	require.False(t, f.cacheStale(), "a fresh build leaves the cache current")
++}
++
++func (f *attachmentRepairFixture) cacheStale() bool {
++	return cacheNeedsBuild(f.cfg.DatabaseDSN(), f.cfg.AnalyticsDir()).NeedsBuild
++}
++
++func TestRepairAttachmentsDryRunRunsNoStartupMigrations(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	f.cfg.Identity.Addresses = []string{"archive@example.com"}
++	messageID := f.seedMessage(t, "dry-run",
++		time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC))
++	require.False(f.legacyIdentityMigrated(t), "seeding leaves the identity migration pending")
++
++	out := f.run(t, false)
++	assert.Contains(out, "Attachments to restore: 1")
++	assert.False(f.legacyIdentityMigrated(t), "a dry run must not migrate the archive")
++	assert.Equal(0, f.state(t, messageID).rows)
++}
++
++func TestRepairAttachmentsDryRunRefusesAnOutdatedSchema(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	f.seedMessage(t, "old-schema", time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC))
++	tableExists := func() bool {
++		st, err := store.OpenForTest(f.cfg.DatabaseDSN())
++		require.NoError(err)
++		defer func() { require.NoError(st.Close()) }()
++		var count int
++		require.NoError(st.DB().QueryRow(`SELECT COUNT(*) FROM sqlite_master
++			WHERE type = 'table' AND name = 'attachment_pack_index'`).Scan(&count))
++		return count > 0
++	}
++	st, err := store.OpenForTest(f.cfg.DatabaseDSN())
++	require.NoError(err)
++	_, err = st.DB().Exec(`DROP TABLE attachment_pack_index`)
++	require.NoError(err)
++	require.NoError(st.Close())
++
++	_, err = f.runResult(false)
++	require.Error(err, "a dry run cannot read an archive older than its schema")
++	assert.Contains(err.Error(), "--apply")
++	assert.False(tableExists(), "a dry run must not upgrade the schema")
++}
++
++func TestRepairAttachmentsRefreshesCacheAfterACommittedRowThatStillFails(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	// Both messages carry the same attachment, so the in-window repair writes
++	// a hash the catalog still resolves to the dead pack.
++	ownerID := f.seedMessage(t, "dead-pack-owner",
++		time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC))
++	hash := filepath.Base(f.storeAttachmentRow(t, ownerID))
++	require.NoError(os.Remove(f.packBlob(t, hash)))
++	messageID := f.seedMessage(t, "shares-dead-hash",
++		time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC))
++	f.buildCache(t)
++
++	_, err := f.runResult(true)
++	require.Error(err)
++	assert.Contains(err.Error(), hash)
++	assert.Equal(1, f.state(t, messageID).rows, "the row commits before verification")
++	assert.False(f.cacheStale(), "a committed row must reach the analytics cache")
++}
++
++func TestRepairAttachmentsRetryFinishesAPendingCacheRefresh(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	messageID := f.seedMessage(t, "restored-cache-stale",
++		time.Date(2026, 9, 1, 9, 0, 0, 0, time.UTC))
++	f.buildCache(t)
++	// A restore that committed before its cache refresh failed.
++	f.storeAttachmentRow(t, messageID)
++	require.True(f.cacheStale())
++
++	assert.Contains(f.run(t, true), "Nothing to repair")
++	assert.False(f.cacheStale(), "a retry must finish the cache refresh")
++}
++
++func TestRepairAttachmentsRejectsPostgreSQL(t *testing.T) {
++	f := newAttachmentRepairFixture(t)
++	f.cfg.Data.DatabaseURL = "postgres://user:pass@127.0.0.1:1/msgvault"
++	for _, apply := range []bool{false, true} {
++		_, err := f.runResult(apply)
++		require.Error(t, err)
++		assert.Contains(t, err.Error(), "SQLite archives only")
++		assert.NotContains(t, err.Error(), "ping", "the store must not be opened")
++	}
 +}
