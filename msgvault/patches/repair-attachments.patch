@@ -1,9 +1,9 @@
 diff --git a/cmd/msgvault/cmd/repair_attachments.go b/cmd/msgvault/cmd/repair_attachments.go
 new file mode 100644
-index 0000000..31f8c49
+index 0000000..3187fe6
 --- /dev/null
 +++ b/cmd/msgvault/cmd/repair_attachments.go
-@@ -0,0 +1,476 @@
+@@ -0,0 +1,481 @@
 +package cmd
 +
 +import (
@@ -114,13 +114,18 @@ index 0000000..31f8c49
 +	out := cmd.OutOrStdout()
 +	printAttachmentRepairPlan(out, plan, since, until)
 +
++	var failures []error
++	if plan.rawMIMEFailures > 0 {
++		failures = append(failures, fmt.Errorf(
++			"%d message(s) whose raw MIME could not be read or parsed",
++			plan.rawMIMEFailures))
++	}
 +	if !apply {
 +		_, err := fmt.Fprintln(out,
 +			"\nDry run: nothing was written. Re-run with --apply to restore.")
-+		return err
++		return errors.Join(append(failures, err)...)
 +	}
 +	restored := 0
-+	var failures []error
 +	if len(plan.repairs) == 0 {
 +		if _, err := fmt.Fprintln(out, "Nothing to repair."); err != nil {
 +			failures = append(failures, err)
