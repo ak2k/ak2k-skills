@@ -370,10 +370,10 @@ index 0000000..3437f7d
 +}
 diff --git a/cmd/msgvault/cmd/repair_attachments_test.go b/cmd/msgvault/cmd/repair_attachments_test.go
 new file mode 100644
-index 0000000..1ef4cfd
+index 0000000..9abd5e8
 --- /dev/null
 +++ b/cmd/msgvault/cmd/repair_attachments_test.go
-@@ -0,0 +1,229 @@
+@@ -0,0 +1,311 @@
 +package cmd
 +
 +import (
@@ -389,6 +389,7 @@ index 0000000..1ef4cfd
 +	"github.com/spf13/cobra"
 +	"github.com/stretchr/testify/assert"
 +	"github.com/stretchr/testify/require"
++	"go.kenn.io/kit/packstore"
 +	"go.kenn.io/msgvault/internal/attachmentstore"
 +	"go.kenn.io/msgvault/internal/config"
 +	"go.kenn.io/msgvault/internal/mime"
@@ -479,6 +480,15 @@ index 0000000..1ef4cfd
 +// sync does, and returns the stored file's path.
 +func (f *attachmentRepairFixture) storeAttachmentRow(t *testing.T, messageID int64) string {
 +	t.Helper()
++	return f.storeAttachmentRowAs(t, messageID, false)
++}
++
++// storeAttachmentRowAs with legacy set writes the row the way msgvault 0.19
++// did: no source part key and an unknown role.
++func (f *attachmentRepairFixture) storeAttachmentRowAs(
++	t *testing.T, messageID int64, legacy bool,
++) string {
++	t.Helper()
 +	require := require.New(t)
 +	parsed, err := mime.Parse(attachmentRepairRawMIME())
 +	require.NoError(err)
@@ -486,6 +496,11 @@ index 0000000..1ef4cfd
 +	write, err := msgsync.StoreMIMEAttachment(f.cfg.AttachmentsDir(), &parsed.Attachments[0])
 +	require.NoError(err)
 +	require.NotEmpty(write.SourcePartKey)
++	if legacy {
++		write.SourcePartKey = ""
++		write.Role = store.AttachmentRoleUnknown
++		write.RoleSource = store.AttachmentRoleSourceUnknown
++	}
 +	st, err := store.OpenForTest(f.cfg.DatabaseDSN())
 +	require.NoError(err)
 +	defer func() { require.NoError(st.Close()) }()
@@ -493,15 +508,41 @@ index 0000000..1ef4cfd
 +	return filepath.Join(f.cfg.AttachmentsDir(), filepath.FromSlash(write.StoragePath))
 +}
 +
++// packBlob moves the blob into a pack and returns the pack file's path.
++func (f *attachmentRepairFixture) packBlob(t *testing.T, hash string) string {
++	t.Helper()
++	require := require.New(t)
++	st, err := store.OpenForTest(f.cfg.DatabaseDSN())
++	require.NoError(err)
++	defer func() { require.NoError(st.Close()) }()
++	maintenance, err := newAttachmentMaintenance(
++		st, f.cfg.AttachmentsDir(), testDiscardLogger(), true)
++	require.NoError(err)
++	_, err = maintenance.pack(t.Context(), 0)
++	require.NoError(err)
++	require.NoError(maintenance.close())
++	entry, err := st.GetAttachmentPackEntry(hash)
++	require.NoError(err)
++	require.NotNil(entry, "blob %s must be packed", hash)
++	return filepath.Join(f.cfg.AttachmentsDir(), "packs",
++		entry.PackID[:2], entry.PackID+packstore.PackExt)
++}
++
 +func (f *attachmentRepairFixture) run(t *testing.T, apply bool) string {
 +	t.Helper()
++	out, err := f.runResult(apply)
++	require.NoError(t, err)
++	return out
++}
++
++func (f *attachmentRepairFixture) runResult(apply bool) (string, error) {
 +	var out bytes.Buffer
 +	cmd := &cobra.Command{}
 +	cmd.SetContext(f.ctx)
 +	cmd.SetOut(&out)
-+	require.NoError(t, runRepairAttachmentsLocal(
-+		cmd, attachmentRepairSince, attachmentRepairUntil, apply))
-+	return out.String()
++	err := runRepairAttachmentsLocal(
++		cmd, attachmentRepairSince, attachmentRepairUntil, apply)
++	return out.String(), err
 +}
 +
 +type attachmentRepairState struct {
@@ -602,4 +643,45 @@ index 0000000..1ef4cfd
 +	second := f.run(t, true)
 +	assert.Equal(1, f.state(t, messageID).rows)
 +	assert.Contains(second, "Nothing to repair")
++}
++
++func TestRepairAttachmentsReportsBlobStillUnreadableAfterRestore(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	messageID := f.seedMessage(t, "dead-pack",
++		time.Date(2026, 8, 25, 9, 0, 0, 0, time.UTC))
++	hash := filepath.Base(f.storeAttachmentRow(t, messageID))
++	require.NoError(os.Remove(f.packBlob(t, hash)))
++	require.Empty(f.state(t, messageID).contents, "a missing pack leaves the blob unreadable")
++
++	out, err := f.runResult(true)
++	require.Error(err, "a blob that still cannot be read is a failure")
++	assert.Contains(err.Error(), hash)
++	assert.Contains(out, "Restored 0 attachment(s).")
++	assert.Empty(f.state(t, messageID).contents)
++}
++
++func TestRepairAttachmentsMatchesLegacyUnkeyedRowByContentHash(t *testing.T) {
++	assert := assert.New(t)
++	require := require.New(t)
++	f := newAttachmentRepairFixture(t)
++	messageID := f.seedMessage(t, "legacy-row",
++		time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC))
++	blobPath := f.storeAttachmentRowAs(t, messageID, true)
++
++	dryRun := f.run(t, false)
++	assert.Contains(dryRun, "Attachments to restore: 0")
++	assert.Contains(f.run(t, true), "Nothing to repair")
++	assert.Equal(1, f.state(t, messageID).rows, "an intact legacy row gains no keyed twin")
++
++	require.NoError(os.Remove(blobPath))
++	require.Empty(f.state(t, messageID).contents)
++	f.run(t, true)
++	got := f.state(t, messageID)
++	assert.Equal(1, got.rows, "the legacy row is reused, not duplicated")
++	assert.Equal([]string{attachmentRepairContent}, got.contents)
++
++	assert.Contains(f.run(t, true), "Nothing to repair")
++	assert.Equal(1, f.state(t, messageID).rows)
 +}
