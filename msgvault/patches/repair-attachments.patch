@@ -1,9 +1,9 @@
 diff --git a/cmd/msgvault/cmd/repair_attachments.go b/cmd/msgvault/cmd/repair_attachments.go
 new file mode 100644
-index 0000000..c31c2bb
+index 0000000..495d8dc
 --- /dev/null
 +++ b/cmd/msgvault/cmd/repair_attachments.go
-@@ -0,0 +1,368 @@
+@@ -0,0 +1,422 @@
 +package cmd
 +
 +import (
@@ -39,9 +39,10 @@ index 0000000..c31c2bb
 +archived the message, not its sent date) and restore each attachment whose
 +row is missing or whose stored file can no longer be read.
 +
-+The default is a read-only report. Pass --apply to write the attachment files
-+and rows and rebuild the analytics cache. The command always runs against the
-+local archive and fails while a daemon owns it.`,
++The default is a read-only report that neither upgrades nor migrates the
++archive. Pass --apply to write the attachment files and rows and refresh the
++analytics cache. The command runs against the local SQLite archive only and
++fails while a daemon owns it.`,
 +	Args: cobra.NoArgs,
 +	RunE: func(cmd *cobra.Command, args []string) error {
 +		since, err := time.Parse(attachmentRepairDateLayout, repairAttachmentsSince)
@@ -90,7 +91,10 @@ index 0000000..c31c2bb
 +		return errors.New("configuration is unavailable")
 +	}
 +	cfg := state.cfg
-+	st, cleanup, err := openWritableStoreAndInitForInvocation(state)
++	if store.IsPostgresURL(cfg.DatabaseDSN()) {
++		return errors.New("repair-attachments supports SQLite archives only")
++	}
++	st, cleanup, err := openAttachmentRepairStore(state, apply)
 +	if err != nil {
 +		return err
 +	}
@@ -102,8 +106,7 @@ index 0000000..c31c2bb
 +	}
 +	defer func() { runErr = errors.Join(runErr, blobs.Close()) }()
 +
-+	plan, err := planAttachmentRepairs(ctx, st, blobs, cfg.DatabaseDSN(),
-+		since, until.AddDate(0, 0, 1))
++	plan, err := planAttachmentRepairs(ctx, st, blobs, since, until.AddDate(0, 0, 1))
 +	if err != nil {
 +		return err
 +	}
@@ -115,13 +118,13 @@ index 0000000..c31c2bb
 +			"\nDry run: nothing was written. Re-run with --apply to restore.")
 +		return err
 +	}
-+	if len(plan.repairs) == 0 {
-+		_, err := fmt.Fprintln(out, "Nothing to repair.")
-+		return err
-+	}
-+
 +	restored := 0
 +	var failures []error
++	if len(plan.repairs) == 0 {
++		if _, err := fmt.Fprintln(out, "Nothing to repair."); err != nil {
++			failures = append(failures, err)
++		}
++	}
 +	for _, repair := range plan.repairs {
 +		if err := ctx.Err(); err != nil {
 +			failures = append(failures, err)
@@ -149,19 +152,75 @@ index 0000000..c31c2bb
 +		}
 +		restored++
 +	}
-+	if _, err := fmt.Fprintf(out, "Restored %d attachment(s).\n", restored); err != nil {
-+		failures = append(failures, err)
-+	}
-+	if restored > 0 {
-+		if err := rebuildCacheAfterWrite(cfg.DatabaseDSN(), state); err != nil {
++	if len(plan.repairs) > 0 {
++		if _, err := fmt.Fprintf(out, "Restored %d attachment(s).\n", restored); err != nil {
 +			failures = append(failures, err)
 +		}
++	}
++	// Rows can commit even when their blob then fails to verify, and an earlier
++	// run's refresh may have failed; the rebuild is a no-op when the cache is
++	// current.
++	if err := rebuildCacheAfterWrite(cfg.DatabaseDSN(), state); err != nil {
++		failures = append(failures, err)
 +	}
 +	if len(failures) > 0 {
 +		return fmt.Errorf("repair-attachments: %d error(s): %w",
 +			len(failures), errors.Join(failures...))
 +	}
 +	return nil
++}
++
++// openAttachmentRepairStore takes the write-owner lock in both modes, so a dry
++// run also refuses while a daemon owns the archive, but only --apply may
++// initialize or migrate the schema.
++func openAttachmentRepairStore(state *invocation, apply bool) (*store.Store, func(), error) {
++	if apply {
++		return openWritableStoreAndInitForInvocation(state)
++	}
++	release, err := acquireDirectSQLiteWriteLock(state.cfg, state)
++	if err != nil {
++		return nil, nil, err
++	}
++	st, err := store.OpenReadOnly(state.cfg.DatabaseDSN())
++	if err != nil {
++		release()
++		return nil, nil, fmt.Errorf("open archive: %w", err)
++	}
++	if err := checkAttachmentRepairSchema(st); err != nil {
++		_ = st.Close()
++		release()
++		return nil, nil, err
++	}
++	return st, func() {
++		_ = st.Close()
++		release()
++	}, nil
++}
++
++// checkAttachmentRepairSchema confirms a dry run can read everything the
++// repair reads without the schema upgrade that only --apply performs.
++func checkAttachmentRepairSchema(st *store.Store) error {
++	upgradeErr := func(cause error) error {
++		return fmt.Errorf("the archive schema needs an upgrade before a dry run "+
++			"can read it (%w); run with --apply, which upgrades it, or upgrade "+
++			"the archive with another msgvault write command first", cause)
++	}
++	stale, column, err := st.SchemaStale()
++	if err != nil {
++		return err
++	}
++	if stale {
++		return upgradeErr(fmt.Errorf("missing %s", column))
++	}
++	rows, err := st.DB().Query(`
++		SELECT m.archived_at, r.raw_format, r.raw_data, r.compression,
++		       a.source_part_key, a.content_hash, a.thumbnail_hash, p.blob_hash
++		FROM messages m, message_raw r, attachments a, attachment_pack_index p
++		LIMIT 0`)
++	if err != nil {
++		return upgradeErr(err)
++	}
++	return rows.Close()
 +}
 +
 +type attachmentRepairRow struct {
@@ -173,10 +232,9 @@ index 0000000..c31c2bb
 +	ctx context.Context,
 +	st *store.Store,
 +	blobs *attachmentstore.Store,
-+	dsn string,
 +	from, to time.Time,
 +) (*attachmentRepairPlan, error) {
-+	messageIDs, err := listMIMEMessagesArchivedBetween(ctx, st, dsn, from, to)
++	messageIDs, err := listMIMEMessagesArchivedBetween(ctx, st, from, to)
 +	if err != nil {
 +		return nil, err
 +	}
@@ -225,7 +283,6 @@ index 0000000..c31c2bb
 +func listMIMEMessagesArchivedBetween(
 +	ctx context.Context,
 +	st *store.Store,
-+	dsn string,
 +	from, to time.Time,
 +) ([]int64, error) {
 +	rows, err := st.DB().QueryContext(ctx, st.Rebind(`
@@ -234,7 +291,7 @@ index 0000000..c31c2bb
 +		JOIN message_raw mr ON mr.message_id = m.id AND mr.raw_format = 'mime'
 +		WHERE m.archived_at >= ? AND m.archived_at < ?
 +		ORDER BY m.id
-+	`), archiveTimeArg(dsn, from), archiveTimeArg(dsn, to))
++	`), archiveTimeArg(from), archiveTimeArg(to))
 +	if err != nil {
 +		return nil, fmt.Errorf("list messages archived in window: %w", err)
 +	}
@@ -253,10 +310,7 @@ index 0000000..c31c2bb
 +// archiveTimeArg matches SQLite's CURRENT_TIMESTAMP text layout, which is how
 +// archived_at is stored there; a driver-formatted time would compare as text
 +// against a different layout.
-+func archiveTimeArg(dsn string, t time.Time) any {
-+	if store.IsPostgresURL(dsn) {
-+		return t.UTC()
-+	}
++func archiveTimeArg(t time.Time) string {
 +	return t.UTC().Format("2006-01-02 15:04:05")
 +}
 +
