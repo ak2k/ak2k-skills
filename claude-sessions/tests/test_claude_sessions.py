@@ -47,7 +47,7 @@ def test_naive_iso_string_stays_naive():
     session's age by the local UTC offset. The naive literal below is the
     assertion, so it carries no tzinfo on purpose."""
     ts = cs.parse_timestamp("2026-08-22T20:15:39")
-    assert ts == datetime(2026, 8, 22, 20, 15, 39)  # noqa: DTZ001
+    assert ts == datetime(2026, 8, 22, 20, 15, 39)
     assert ts is not None and ts.tzinfo is None
 
 
