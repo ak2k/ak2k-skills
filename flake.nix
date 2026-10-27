@@ -62,7 +62,7 @@
     # closure pins its own, and overriding it risks the C-extension build.
     # Pinned by commit so Renovate opens a digest PR on each upstream merge; a bare branch URL
     # only moves in the weekly lock-file maintenance.
-    surefetch.url = "github:ak2k/surefetch/c6a2d0449efa850b671cb5e66b17aa5809999220";
+    surefetch.url = "github:ak2k/surefetch/ae112488003bad9f96d08f159e2fe9dfb64689bc";
   };
 
   outputs =
