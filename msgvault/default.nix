@@ -19,8 +19,8 @@
 let
   # Renovate refreshes both hashes on every msgvault bump by running
   # `nix run .#msgvault-update-hashes` (see renovate.json).
-  webHash = "sha256-jD7zUR32PHJGG7t2jdnyU0ZkrrWNXC2YE9dqH/LKNWs=";
-  vendorHash = "sha256-ubTc1ct42AP75Pn43UF4frNADAPL+BOrolhtlfExtfA=";
+  webHash = "sha256-X9YLzi+iODzkuZZqo1rHqDM2dT2XIrWX1Az/njwmAZk=";
+  vendorHash = "sha256-ZC3/LEAduWBG5gHxBVIMHSj6jJRd0hm1Mvv5gA+d+ws=";
 
   # The web UI that `msgvault serve` embeds; without it the binary carries
   # only a stub and answers 404 at `/`. Fixed-output so bun can fetch from
