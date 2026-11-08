@@ -95,6 +95,15 @@
       "schedule": [
         "at any time"
       ]
+    },
+    {
+      "description": [
+        "Each vale-ai-tells release adds error-level rules, so a bump needs prose-gate's tuning pass (measure the corpus before and after, then adjust the overrides in prose-gate/default.nix) before it merges."
+      ],
+      "matchDepNames": [
+        "tbhb/vale-ai-tells"
+      ],
+      "automerge": false
     }
   ]
 }

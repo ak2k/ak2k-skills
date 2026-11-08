@@ -17,13 +17,16 @@
 #     must never reach external readers (error level: these are what make the
 #     gate exit nonzero).
 #
-# Style zips are fixed-output fetches, so there is no `vale sync` and no
-# network at runtime. Hashes are fetchzip NAR hashes (its postFetch chmod
-# normalization means `nix-prefetch-url --unpack` values do NOT match — take
-# the hash from the mismatch error on a fake-hash build). The fix half of the
-# gate is the `humanizer` skill (github.com/blader/humanizer); the
-# orchestration is skills/prose-gate/SKILL.md.
+# Every style is pinned at build time, so there is no `vale sync` and no
+# network at runtime. The ai-tells packages come from the vale-ai-tells flake
+# input's source tree (`valeAiTells`). vale-llm-slop is a release-zip
+# fetchzip; its hash is a fetchzip NAR hash (its postFetch chmod normalization
+# means `nix-prefetch-url --unpack` values do NOT match — take the hash from
+# the mismatch error on a fake-hash build). The fix half of the gate is the
+# `humanizer` skill; the orchestration is skills/prose-gate/SKILL.md.
 {
+  valeAiTells,
+  ponytail,
   fetchzip,
   runCommand,
   symlinkJoin,
@@ -31,40 +34,25 @@
   vale,
 }:
 let
-  aiTells = fetchzip {
-    url = "https://github.com/tbhb/vale-ai-tells/releases/download/v1.34.0/ai-tells.zip";
-    hash = "sha256-jI4HbL7DvXajYnPE1xW1cRohxnZtsV6G3vd52MFytmg=";
-    stripRoot = false;
-  };
-  aiTellsCommits = fetchzip {
-    url = "https://github.com/tbhb/vale-ai-tells/releases/download/v1.34.0/ai-tells-commits.zip";
-    hash = "sha256-olO22ttQRwbzb24SyXXMq3UFRXbpEYctD1mxSkHTTbA=";
-    stripRoot = false;
-  };
-  aiTellsExperimental = fetchzip {
-    url = "https://github.com/tbhb/vale-ai-tells/releases/download/v1.34.0/ai-tells-experimental.zip";
-    hash = "sha256-DAIoKqv4HYk1lN3AnSTmzIljtDzttFi5Me/SboNeFbI=";
-    stripRoot = false;
-  };
   llmSlop = fetchzip {
     url = "https://github.com/Syntaf/vale-llm-slop/releases/download/v0.1.0/vale-llm-slop.zip";
     hash = "sha256-kaQ3lSuCkN9pAhZVxyj8hNlHTNuudKruvdLhdq6u4A4=";
     stripRoot = false;
   };
 
-  # Each zip wraps its content in one top-level directory (kept, since
-  # stripRoot = false) — the globs step over it without naming it.
+  # The vale-llm-slop zip wraps its content in one top-level directory (kept,
+  # since stripRoot = false); the globs step over it without naming it.
   styles = runCommand "prose-gate-styles" { } ''
     mkdir -p "$out"
-    cp -r ${aiTells}/*/styles/ai-tells "$out/ai-tells"
+    cp -r ${valeAiTells}/styles/ai-tells "$out/ai-tells"
     mkdir -p "$out/ai-tells-commits"
-    cp ${aiTellsCommits}/*/*.yml "$out/ai-tells-commits/"
-    cp -r ${aiTellsExperimental}/*/styles/ai-tells-experimental "$out/ai-tells-experimental"
+    cp ${valeAiTells}/styles/ai-tells-commits/*.yml "$out/ai-tells-commits/"
+    cp -r ${valeAiTells}/styles/ai-tells-experimental "$out/ai-tells-experimental"
     # vale resolves a `script:` rule against <StylesPath>/config/scripts, so
-    # the Tengo files come from the package's sibling config/scripts directory
+    # the Tengo files come from the sibling config/scripts directory
     # (upstream keeps them beside the style directory, never inside it).
     mkdir -p "$out/config/scripts"
-    cp ${aiTellsExperimental}/*/styles/config/scripts/*.tengo "$out/config/scripts/"
+    cp ${valeAiTells}/styles/config/scripts/*.tengo "$out/config/scripts/"
     cp -r ${llmSlop}/*/styles/Slop "$out/Slop"
     cp -r ${llmSlop}/*/styles/STE "$out/STE"
     # vale hands an occurrence rule's observed count to its message as a
@@ -86,12 +74,14 @@ let
   '';
 
   # Package-rule overrides, tuned on the author's own agent-written commits and
-  # PR bodies (2026-08-26; re-measured 2026-09-10 over 40 merged PR bodies and
-  # 60 commit bodies at v1.34.0). The invariant both passes serve: only a tell
-  # that is almost always right in this register may exit 1. A rule that fires
-  # on the literal technical sense of a word in already-accepted text is off;
-  # a real tell that is merely too common in the house vocabulary to fail on
-  # drops to warning.
+  # PR bodies (2026-08-26; re-measured 2026-11-08 at v1.37.0 over 40 merged PR
+  # bodies and 60 commit bodies: tuned, the PR bodies draw 41 errors, 12
+  # warnings and 26 suggestions, 19 of 40 with an error; the commit bodies draw
+  # 24 errors in prose mode and 28 with --commit-msg). The invariant every pass
+  # serves: only a tell that is almost always right in this register may
+  # exit 1. A rule that fires on the literal technical sense of a word in
+  # already-accepted text is off; a real tell that is merely too common in the
+  # house vocabulary to fail on drops to warning.
   #
   # Off, because each fires on text the corpus has already accepted: the
   # punctuation rules fight deliberate house style; FormalRegister
@@ -106,7 +96,11 @@ let
   # uses literally: "shape", "gates on", "survives a restart", and the
   # anthropomorphism rules v1.34 widened and added ("the warning cannot
   # decide", "the healthy poll"). AnthropomorphicJustification stays at error;
-  # it has no literal reading here.
+  # it has no literal reading here. ConsequenceClause joins them for the
+  # construction rather than a word: the ", so the check goes red" inference
+  # appears in 3 of 40 accepted PR bodies. FigurativeCarries, the "carry" for
+  # "contain" figure that v1.37 widened, fires in 19 of a wider 300 accepted PR
+  # bodies, about as often as ConsequenceClause.
   #
   # Advisory, kept visible but never fatal: VerbTricolon's regex over-matches
   # across line breaks, CataphoricForecasting flags ordinary forward
@@ -131,6 +125,8 @@ let
     ai-tells.EnforcementMetaphors = warning
     ai-tells.AnthropomorphicCognition = warning
     ai-tells.AnthropomorphicAdjectives = warning
+    ai-tells.ConsequenceClause = warning
+    ai-tells.FigurativeCarries = warning
     ai-tells-experimental.PassiveVoice = NO
     ai-tells-experimental.PassiveVoiceAdverb = NO
     ai-tells-experimental.PassiveDensity = NO
@@ -215,9 +211,13 @@ symlinkJoin {
   name = "prose-gate";
   paths = [ cli ];
   skillSrc = ../skills/prose-gate;
+  # ponytail's description claims every coding task, so a top-level install
+  # would load it in every session; nested here, the skill reads it on demand.
   postBuild = ''
-    mkdir -p $out/share/skills/prose-gate
+    mkdir -p $out/share/skills/prose-gate/references
     cp -r $skillSrc/. $out/share/skills/prose-gate/
+    cp -r ${ponytail}/skills/ponytail $out/share/skills/prose-gate/references/ponytail
+    cp -r ${ponytail}/skills/ponytail-review $out/share/skills/prose-gate/references/ponytail-review
   '';
   meta = {
     description = "Deterministic AI-tell lint for prose bound for external readers";

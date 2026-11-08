@@ -63,6 +63,28 @@
     # Pinned by commit so Renovate opens a digest PR on each upstream merge; a bare branch URL
     # only moves in the weekly lock-file maintenance.
     surefetch.url = "github:ak2k/surefetch/ae112488003bad9f96d08f159e2fe9dfb64689bc";
+
+    # vale-ai-tells — the ai-tells style packages prose-gate lints with. Each
+    # release adds error-level rules, so a bump needs prose-gate's tuning pass
+    # before it merges: renovate.json turns off Renovate's automerge for it, and
+    # .github/workflows/automerge.yml blocks any PR that moves its locked rev.
+    vale-ai-tells.url = "github:tbhb/vale-ai-tells/v1.37.0";
+    vale-ai-tells.flake = false;
+
+    # Companion skills that prose-gate's rewrite step loads; each repo is a
+    # SKILL.md tree with no flake.
+    # humanizer: the general de-AI rewrite, registered straight from the input.
+    humanizer.url = "github:blader/humanizer/v3.1.0";
+    humanizer.flake = false;
+    # asd-ste100: controlled-English rewrite for --ste findings. Upstream cuts
+    # no tags, so it is pinned by commit for Renovate's digest PRs.
+    asd-ste100.url = "github:danyuchn/asd-ste100-skill/a610dbdfb27366653798bcdd4cebe745c92e1ac5";
+    asd-ste100.flake = false;
+    # ponytail: the code-minimalism skill and its diff review, which the
+    # Ponytail cut points at. Nested inside prose-gate's skill output rather
+    # than registered: ponytail's description claims every coding task.
+    ponytail.url = "github:DietrichGebert/ponytail/v5.3.3";
+    ponytail.flake = false;
   };
 
   outputs =
@@ -99,6 +121,13 @@
       #       [ "claude-sessions" "msgvault-query" ]
       #         ++ inputs.ak2k-skills.lib.bundles.gws;
       flake.lib.bundles.gws = gwsSkills.topLevel;
+
+      # Leaves out prose-gate itself: a consumer that builds its own prose-gate
+      # would otherwise get a second bin/prose-gate and skill directory.
+      flake.lib.bundles.prose-gate-companions = [
+        "humanizer"
+        "asd-ste100"
+      ];
 
       flake.homeManagerModules.default =
         { pkgs, ... }:
@@ -196,7 +225,10 @@
             officecli = inputs.llm-agents.packages.${system}.officecli;
             officecli-skill = officecliSkill;
             pplx-agent-tools = inputs.pplx-agent-tools.packages.${system}.default;
-            prose-gate = pkgs.callPackage ./prose-gate { };
+            prose-gate = pkgs.callPackage ./prose-gate {
+              valeAiTells = inputs.vale-ai-tells;
+              ponytail = inputs.ponytail;
+            };
           };
 
           # Renovate's post-upgrade task for msgvault bumps; see renovate.json.

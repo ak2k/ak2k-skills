@@ -48,16 +48,14 @@ rewrite process, with these additions to its defaults:
   hit it. When none is given and the draft is flabby, cut 20–30% without
   dropping a claim; text about a code change takes the Ponytail cut below
   instead. PR bodies for external repos calibrate to the
-  maintainer's accepted size — read 2–3 recently merged PRs first (bodies
-  have shipped 3–5x oversize before).
+  maintainer's accepted size — read 2–3 recently merged PRs first.
 - **Public text is flag-propose-wait.** For anything already drafted that
   will publish under the user's name (PR body, review comment, email): quote
   the problem, propose the rewrite, wait for the call. Never silently
   paraphrase — exact wording of public text matters.
 - Keep every claim; never invent facts; match the user's terse register.
 - **Mannered prose is a rewrite target the lint cannot see.** Fresh metaphor
-  is not enumerable by regex — measured 2026-09-10, the gate caught 2 of 15
-  noun metaphors, and "a dial worth turning" still passes v1.34 — so apply
+  is not enumerable by regex, and the gate catches few metaphors, so apply
   this definition as a criterion on every sentence ([Fable 5.1 prompting
   guide](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1#writing-density)):
   "Mannered prose substitutes metaphor and flourish for direct statement.
@@ -85,10 +83,10 @@ prose with no diff (email, docs prose), or to the user's own configuration-repo
 commits and internal text; the line is whether anyone other than the user will
 read it.
 
-- **State the why; never restate what the diff shows.** The one prose rule in
-  upstream Ponytail is
-  "Comment only the why the code cannot show, in one line." (`skills/ponytail/SKILL.md` in
-  https://github.com/DietrichGebert/ponytail at 09c434a, MIT). The rest of
+- **State the why; never restate what the diff shows.** The comment rule in
+  the `ponytail` skill (`references/ponytail/SKILL.md` in this skill's
+  directory) this pass takes is
+  "Comment only the why the code cannot show, in one line." The rest of
   this pass is ours; Ponytail itself is a code-minimalism skill.
 - **Match the code.** Follow the changed file's comment density and style, and
   keep a commit message within the lengths of that path's own `git log`.
@@ -109,9 +107,11 @@ read it.
 - **Who runs it.** Public text gets the pass from a separate opus session,
   briefed with every reviewer comment on the PR, the surrounding code and the
   acceptance question. The pass covers the code and its comments too; for the
-  code, point that session at a clone of the upstream Ponytail file (no plugin
-  install). Text written or changed after a pass gets the pass again, PR
-  bodies included. Then step 3.
+  code, point that session at the `ponytail` skill
+  (`references/ponytail/SKILL.md` in this skill's directory), and use
+  `ponytail-review` (`references/ponytail-review/SKILL.md` there) to review
+  the diff. Text written or changed after a pass gets the pass
+  again, PR bodies included. Then step 3.
 
 ## 3. Re-run the gate
 
@@ -128,7 +128,8 @@ deliberate choices.
   corpus has already accepted — as are the experimental passive rules, since passive
   voice stays `--ste`-only. FigurativeShape, the mortality, motion and
   enforcement metaphor rules, AnthropomorphicCognition and
-  AnthropomorphicAdjectives warn rather than fail, being house vocabulary;
+  AnthropomorphicAdjectives warn rather than fail, being house vocabulary, and
+  so do ConsequenceClause, a house construction, and FigurativeCarries;
   VerbTricolon, CataphoricForecasting and NegatedPair are advisory. Under
   `--ste`, ContractionAvoidance is off too, since STE bans contractions
   outright. Rationale in `prose-gate/default.nix`.

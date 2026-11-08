@@ -104,7 +104,8 @@ jobs:
               // else. Mirrors the human-review intent of the renovate.json
               // packageRule (which only gates Renovate's own --automerge flag,
               // not this direct-merge workflow).
-              const blockedInputs = ["llm-agents"];
+              // vale-ai-tells: each release needs prose-gate's tuning pass first.
+              const blockedInputs = ["llm-agents", "vale-ai-tells"];
               const fetchLock = (ref) =>
                 github.rest.repos.getContent({ owner, repo, path: "flake.lock", ref })
                   .then((r) => JSON.parse(Buffer.from(r.data.content, "base64").toString()))
@@ -123,14 +124,37 @@ jobs:
                 fetchLock(pr.head.sha),
                 fetchLock(cmp.merge_base_commit.sha),
               ]);
-              if (headLock && baseLock) {
-                const touched = blockedInputs.filter(
-                  (name) => headLock.nodes?.[name]?.locked?.rev !== baseLock.nodes?.[name]?.locked?.rev
-                );
-                if (touched.length > 0) {
-                  core.info(`#${pr.number}: blocked — flake.lock touches ${touched.join(", ")}`);
-                  continue;
+              // An unreadable lock skips the PR: without both revs the block
+              // cannot tell whether a held input moved.
+              if (!headLock || !baseLock) {
+                core.warning(`#${pr.number}: skipped — could not read flake.lock at head or merge base`);
+                continue;
+              }
+              // Node keys are not input names: the lock writer suffixes a key
+              // (`_2`) when a transitive input already took the name, so a
+              // root input is found through root.inputs. A follows path (an
+              // array) is walked from root, as nix does, and compares as the
+              // rev of the node it ends at.
+              const resolveNode = (lock, path, depth = 0) => {
+                if (depth > 32) return undefined;
+                let key = "root";
+                for (const step of path) {
+                  const next = lock.nodes?.[key]?.inputs?.[step];
+                  key = Array.isArray(next) ? resolveNode(lock, next, depth + 1) : next;
+                  if (key === undefined) return undefined;
                 }
+                return key;
+              };
+              const lockedRev = (lock, name) => {
+                const key = resolveNode(lock, [name]);
+                return key === undefined ? undefined : lock.nodes?.[key]?.locked?.rev;
+              };
+              const touched = blockedInputs.filter(
+                (name) => lockedRev(headLock, name) !== lockedRev(baseLock, name)
+              );
+              if (touched.length > 0) {
+                core.info(`#${pr.number}: blocked — flake.lock touches ${touched.join(", ")}`);
+                continue;
               }
 
               try {
