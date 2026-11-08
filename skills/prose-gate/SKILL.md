@@ -128,7 +128,7 @@ deliberate choices.
   voice stays `--ste`-only. FigurativeShape, the mortality, motion and
   enforcement metaphor rules, AnthropomorphicCognition and
   AnthropomorphicAdjectives warn rather than fail, being house vocabulary, and
-  so does ConsequenceClause, a house construction;
+  so do ConsequenceClause, a house construction, and FigurativeCarries;
   VerbTricolon, CataphoricForecasting and NegatedPair are advisory. Under
   `--ste`, ContractionAvoidance is off too, since STE bans contractions
   outright. Rationale in `prose-gate/default.nix`.

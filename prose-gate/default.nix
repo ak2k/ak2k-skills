@@ -75,14 +75,13 @@ let
 
   # Package-rule overrides, tuned on the author's own agent-written commits and
   # PR bodies (2026-08-26; re-measured 2026-11-08 at v1.37.0 over 40 merged PR
-  # bodies and 60 commit bodies: tuned, the PR bodies draw 42 errors, 11
+  # bodies and 60 commit bodies: tuned, the PR bodies draw 41 errors, 12
   # warnings and 26 suggestions, 19 of 40 with an error; the commit bodies draw
-  # 26 errors in prose mode and 30 with --commit-msg). The invariant every pass
-  # serves: only a tell
-  # that is almost always right in this register may exit 1. A rule that fires
-  # on the literal technical sense of a word in already-accepted text is off;
-  # a real tell that is merely too common in the house vocabulary to fail on
-  # drops to warning.
+  # 24 errors in prose mode and 28 with --commit-msg). The invariant every pass
+  # serves: only a tell that is almost always right in this register may
+  # exit 1. A rule that fires on the literal technical sense of a word in
+  # already-accepted text is off; a real tell that is merely too common in the
+  # house vocabulary to fail on drops to warning.
   #
   # Off, because each fires on text the corpus has already accepted: the
   # punctuation rules fight deliberate house style; FormalRegister
@@ -99,7 +98,9 @@ let
   # decide", "the healthy poll"). AnthropomorphicJustification stays at error;
   # it has no literal reading here. ConsequenceClause joins them for the
   # construction rather than a word: the ", so the check goes red" inference
-  # appears in 3 of 40 accepted PR bodies.
+  # appears in 3 of 40 accepted PR bodies. FigurativeCarries, the "carry" for
+  # "contain" figure that v1.37 widened, fires in 19 of a wider 300 accepted PR
+  # bodies, about as often as ConsequenceClause.
   #
   # Advisory, kept visible but never fatal: VerbTricolon's regex over-matches
   # across line breaks, CataphoricForecasting flags ordinary forward
@@ -125,6 +126,7 @@ let
     ai-tells.AnthropomorphicCognition = warning
     ai-tells.AnthropomorphicAdjectives = warning
     ai-tells.ConsequenceClause = warning
+    ai-tells.FigurativeCarries = warning
     ai-tells-experimental.PassiveVoice = NO
     ai-tells-experimental.PassiveVoiceAdverb = NO
     ai-tells-experimental.PassiveDensity = NO
