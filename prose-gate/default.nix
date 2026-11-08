@@ -19,7 +19,7 @@
 #
 # Every style is pinned at build time, so there is no `vale sync` and no
 # network at runtime. The ai-tells packages come from the vale-ai-tells flake
-# input's source tree (`valeAiTells`). vale-llm-slop stays a release-zip
+# input's source tree (`valeAiTells`). vale-llm-slop is a release-zip
 # fetchzip; its hash is a fetchzip NAR hash (its postFetch chmod normalization
 # means `nix-prefetch-url --unpack` values do NOT match — take the hash from
 # the mismatch error on a fake-hash build). The fix half of the gate is the
