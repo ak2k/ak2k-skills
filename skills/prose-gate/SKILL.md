@@ -83,8 +83,9 @@ prose with no diff (email, docs prose), or to the user's own configuration-repo
 commits and internal text; the line is whether anyone other than the user will
 read it.
 
-- **State the why; never restate what the diff shows.** The one prose rule in
-  the `ponytail` skill (`~/.claude/skills/prose-gate/references/ponytail/SKILL.md`) is
+- **State the why; never restate what the diff shows.** The comment rule in
+  the `ponytail` skill (`~/.claude/skills/prose-gate/references/ponytail/SKILL.md`)
+  this pass takes is
   "Comment only the why the code cannot show, in one line." The rest of
   this pass is ours; Ponytail itself is a code-minimalism skill.
 - **Match the code.** Follow the changed file's comment density and style, and
