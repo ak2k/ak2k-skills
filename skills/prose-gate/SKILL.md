@@ -85,13 +85,6 @@ prose with no diff (email, docs prose), or to the user's own configuration-repo
 commits and internal text; the line is whether anyone other than the user will
 read it.
 
-The user's rules, verbatim (2026-10-23, 2026-10-24, 2026-10-25):
-"relentless conciseness for code comments and commit messages";
-"And ultimately the conciseness should mirror the code that the change appears in.";
-on a PR body: "isn't this long?", "it seems to restate WHAT not WHY";
-"make sure all has had ponytail pass". On 2026-11-03:
-"we also need ponytail to review the code, comment, etc, and be shown the reviewer comments".
-
 - **State the why; never restate what the diff shows.** The one prose rule in
   upstream Ponytail is
   "Comment only the why the code cannot show, in one line." (`skills/ponytail/SKILL.md` in
