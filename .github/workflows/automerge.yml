@@ -32,7 +32,7 @@ jobs:
             const requiredChecks = [
               "check (ubuntu-latest)",
               "check (ubuntu-24.04-arm)",
-              "check (macos-14)",
+              "check (macos-15)",
             ];
             const automergeLabel = "automerge";
 
