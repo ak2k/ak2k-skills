@@ -124,14 +124,18 @@ jobs:
                 fetchLock(pr.head.sha),
                 fetchLock(cmp.merge_base_commit.sha),
               ]);
-              if (headLock && baseLock) {
-                const touched = blockedInputs.filter(
-                  (name) => headLock.nodes?.[name]?.locked?.rev !== baseLock.nodes?.[name]?.locked?.rev
-                );
-                if (touched.length > 0) {
-                  core.info(`#${pr.number}: blocked — flake.lock touches ${touched.join(", ")}`);
-                  continue;
-                }
+              // An unreadable lock skips the PR: without both revs the block
+              // cannot tell whether a held input moved.
+              if (!headLock || !baseLock) {
+                core.warning(`#${pr.number}: skipped — could not read flake.lock at head or merge base`);
+                continue;
+              }
+              const touched = blockedInputs.filter(
+                (name) => headLock.nodes?.[name]?.locked?.rev !== baseLock.nodes?.[name]?.locked?.rev
+              );
+              if (touched.length > 0) {
+                core.info(`#${pr.number}: blocked — flake.lock touches ${touched.join(", ")}`);
+                continue;
               }
 
               try {
