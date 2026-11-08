@@ -84,7 +84,7 @@ commits and internal text; the line is whether anyone other than the user will
 read it.
 
 - **State the why; never restate what the diff shows.** The one prose rule in
-  the `ponytail` skill (`~/.claude/skills/ponytail`) is
+  the `ponytail` skill (`~/.claude/skills/prose-gate/references/ponytail/SKILL.md`) is
   "Comment only the why the code cannot show, in one line." The rest of
   this pass is ours; Ponytail itself is a code-minimalism skill.
 - **Match the code.** Follow the changed file's comment density and style, and
@@ -106,10 +106,11 @@ read it.
 - **Who runs it.** Public text gets the pass from a separate opus session,
   briefed with every reviewer comment on the PR, the surrounding code and the
   acceptance question. The pass covers the code and its comments too; for the
-  code, point that session at the installed `ponytail` skill
-  (`~/.claude/skills/ponytail`), and use `ponytail-review`
-  (`~/.claude/skills/ponytail-review`) to review the diff. Text written or
-  changed after a pass gets the pass again, PR bodies included. Then step 3.
+  code, point that session at the `ponytail` skill
+  (`~/.claude/skills/prose-gate/references/ponytail/SKILL.md`), and use
+  `ponytail-review` (`~/.claude/skills/prose-gate/references/ponytail-review/SKILL.md`)
+  to review the diff. Text written or changed after a pass gets the pass
+  again, PR bodies included. Then step 3.
 
 ## 3. Re-run the gate
 

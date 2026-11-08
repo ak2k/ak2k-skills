@@ -26,6 +26,7 @@
 # `humanizer` skill; the orchestration is skills/prose-gate/SKILL.md.
 {
   valeAiTells,
+  ponytail,
   fetchzip,
   runCommand,
   symlinkJoin,
@@ -208,9 +209,13 @@ symlinkJoin {
   name = "prose-gate";
   paths = [ cli ];
   skillSrc = ../skills/prose-gate;
+  # ponytail's description claims every coding task, so a top-level install
+  # would load it in every session; nested here, the skill reads it on demand.
   postBuild = ''
-    mkdir -p $out/share/skills/prose-gate
+    mkdir -p $out/share/skills/prose-gate/references
     cp -r $skillSrc/. $out/share/skills/prose-gate/
+    cp -r ${ponytail}/skills/ponytail $out/share/skills/prose-gate/references/ponytail
+    cp -r ${ponytail}/skills/ponytail-review $out/share/skills/prose-gate/references/ponytail-review
   '';
   meta = {
     description = "Deterministic AI-tell lint for prose bound for external readers";
