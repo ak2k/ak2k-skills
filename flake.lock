@@ -1,5 +1,22 @@
 {
   "nodes": {
+    "asd-ste100": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1793759235,
+        "narHash": "sha256-+QIbwxGcpzUjc7cYD0J/d9FVn1rY7fJqFZWJVImvwgs=",
+        "owner": "danyuchn",
+        "repo": "asd-ste100-skill",
+        "rev": "a610dbdfb27366653798bcdd4cebe745c92e1ac5",
+        "type": "github"
+      },
+      "original": {
+        "owner": "danyuchn",
+        "repo": "asd-ste100-skill",
+        "rev": "a610dbdfb27366653798bcdd4cebe745c92e1ac5",
+        "type": "github"
+      }
+    },
     "atlassian-mcp-skills": {
       "flake": false,
       "locked": {
@@ -164,6 +181,23 @@
         "type": "github"
       }
     },
+    "humanizer": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1790574878,
+        "narHash": "sha256-n8cbTzhlGf8VnWpPukq7XD2mucIrqyE1XMpAAc5oA8A=",
+        "owner": "blader",
+        "repo": "humanizer",
+        "rev": "225a6f39ac85f76ee48dbad772ea4abe4ed6c9d8",
+        "type": "github"
+      },
+      "original": {
+        "owner": "blader",
+        "ref": "v3.1.0",
+        "repo": "humanizer",
+        "type": "github"
+      }
+    },
     "llm-agents": {
       "inputs": {
         "bun2nix": "bun2nix",
@@ -298,6 +332,23 @@
         "type": "github"
       }
     },
+    "ponytail": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1793243094,
+        "narHash": "sha256-CY0EifTY0UVc6/FPGVJjEfYEf/8QLsINQmoYYKZYh98=",
+        "owner": "DietrichGebert",
+        "repo": "ponytail",
+        "rev": "7801d061243d7b753bad0e0b3c057cd250b11755",
+        "type": "github"
+      },
+      "original": {
+        "owner": "DietrichGebert",
+        "ref": "v5.3.3",
+        "repo": "ponytail",
+        "type": "github"
+      }
+    },
     "pplx-agent-tools": {
       "inputs": {
         "nixpkgs": [
@@ -424,12 +475,15 @@
     },
     "root": {
       "inputs": {
+        "asd-ste100": "asd-ste100",
         "atlassian-mcp-skills": "atlassian-mcp-skills",
         "flake-parts": "flake-parts",
         "googleworkspace-cli": "googleworkspace-cli",
+        "humanizer": "humanizer",
         "llm-agents": "llm-agents",
         "msgvault": "msgvault",
         "nixpkgs": "nixpkgs_3",
+        "ponytail": "ponytail",
         "pplx-agent-tools": "pplx-agent-tools",
         "surefetch": "surefetch",
         "treefmt-nix": "treefmt-nix_2"

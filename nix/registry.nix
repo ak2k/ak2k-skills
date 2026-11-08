@@ -77,11 +77,26 @@ let
       source = "${sysPkgs.pplx-agent-tools}/share/skills/pplx-agent-tools";
       package = sysPkgs.pplx-agent-tools;
     };
-    # The skill's rewrite step loads the humanizer and asd-ste100 skills,
-    # which this flake does not ship.
+    # The skill's rewrite step loads the four companions below;
+    # `lib.bundles.prose-gate-companions` lists them.
     prose-gate = {
       source = "${sysPkgs.prose-gate}/share/skills/prose-gate";
       package = sysPkgs.prose-gate;
+    };
+    # Docs-only companions, each sourced from its upstream tree as pinned in
+    # flake.nix. Only these two ponytail skills are registered; the rest of
+    # its skills/ directory is not part of the prose-gate workflow.
+    humanizer = {
+      source = "${inputs.humanizer}";
+    };
+    asd-ste100 = {
+      source = "${inputs.asd-ste100}";
+    };
+    ponytail = {
+      source = "${inputs.ponytail}/skills/ponytail";
+    };
+    ponytail-review = {
+      source = "${inputs.ponytail}/skills/ponytail-review";
     };
     # Docs-only skill: no binary in this flake. The source lives in the repo
     # tree directly — home-manager treats it the same as any other path.
