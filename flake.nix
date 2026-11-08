@@ -64,6 +64,11 @@
     # only moves in the weekly lock-file maintenance.
     surefetch.url = "github:ak2k/surefetch/ae112488003bad9f96d08f159e2fe9dfb64689bc";
 
+    # vale-ai-tells — the ai-tells style packages prose-gate lints with. Each
+    # release adds error-level rules, so a bump needs prose-gate's tuning pass.
+    vale-ai-tells.url = "github:tbhb/vale-ai-tells/v1.34.0";
+    vale-ai-tells.flake = false;
+
     # Companion skills that prose-gate's rewrite step loads; each repo is a
     # SKILL.md tree with no flake, registered straight from the input.
     # humanizer: the general de-AI rewrite.
@@ -219,7 +224,7 @@
             officecli = inputs.llm-agents.packages.${system}.officecli;
             officecli-skill = officecliSkill;
             pplx-agent-tools = inputs.pplx-agent-tools.packages.${system}.default;
-            prose-gate = pkgs.callPackage ./prose-gate { };
+            prose-gate = pkgs.callPackage ./prose-gate { valeAiTells = inputs.vale-ai-tells; };
           };
 
           # Renovate's post-upgrade task for msgvault bumps; see renovate.json.

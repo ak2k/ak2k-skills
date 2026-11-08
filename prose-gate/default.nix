@@ -17,13 +17,15 @@
 #     must never reach external readers (error level: these are what make the
 #     gate exit nonzero).
 #
-# Style zips are fixed-output fetches, so there is no `vale sync` and no
-# network at runtime. Hashes are fetchzip NAR hashes (its postFetch chmod
-# normalization means `nix-prefetch-url --unpack` values do NOT match — take
-# the hash from the mismatch error on a fake-hash build). The fix half of the
-# gate is the `humanizer` skill (github.com/blader/humanizer); the
-# orchestration is skills/prose-gate/SKILL.md.
+# Every style is pinned at build time, so there is no `vale sync` and no
+# network at runtime. The ai-tells packages come from the vale-ai-tells flake
+# input's source tree (`valeAiTells`). vale-llm-slop stays a release-zip
+# fetchzip; its hash is a fetchzip NAR hash (its postFetch chmod normalization
+# means `nix-prefetch-url --unpack` values do NOT match — take the hash from
+# the mismatch error on a fake-hash build). The fix half of the gate is the
+# `humanizer` skill; the orchestration is skills/prose-gate/SKILL.md.
 {
+  valeAiTells,
   fetchzip,
   runCommand,
   symlinkJoin,
@@ -31,40 +33,25 @@
   vale,
 }:
 let
-  aiTells = fetchzip {
-    url = "https://github.com/tbhb/vale-ai-tells/releases/download/v1.34.0/ai-tells.zip";
-    hash = "sha256-jI4HbL7DvXajYnPE1xW1cRohxnZtsV6G3vd52MFytmg=";
-    stripRoot = false;
-  };
-  aiTellsCommits = fetchzip {
-    url = "https://github.com/tbhb/vale-ai-tells/releases/download/v1.34.0/ai-tells-commits.zip";
-    hash = "sha256-olO22ttQRwbzb24SyXXMq3UFRXbpEYctD1mxSkHTTbA=";
-    stripRoot = false;
-  };
-  aiTellsExperimental = fetchzip {
-    url = "https://github.com/tbhb/vale-ai-tells/releases/download/v1.34.0/ai-tells-experimental.zip";
-    hash = "sha256-DAIoKqv4HYk1lN3AnSTmzIljtDzttFi5Me/SboNeFbI=";
-    stripRoot = false;
-  };
   llmSlop = fetchzip {
     url = "https://github.com/Syntaf/vale-llm-slop/releases/download/v0.1.0/vale-llm-slop.zip";
     hash = "sha256-kaQ3lSuCkN9pAhZVxyj8hNlHTNuudKruvdLhdq6u4A4=";
     stripRoot = false;
   };
 
-  # Each zip wraps its content in one top-level directory (kept, since
-  # stripRoot = false) — the globs step over it without naming it.
+  # The vale-llm-slop zip wraps its content in one top-level directory (kept,
+  # since stripRoot = false); the globs step over it without naming it.
   styles = runCommand "prose-gate-styles" { } ''
     mkdir -p "$out"
-    cp -r ${aiTells}/*/styles/ai-tells "$out/ai-tells"
+    cp -r ${valeAiTells}/styles/ai-tells "$out/ai-tells"
     mkdir -p "$out/ai-tells-commits"
-    cp ${aiTellsCommits}/*/*.yml "$out/ai-tells-commits/"
-    cp -r ${aiTellsExperimental}/*/styles/ai-tells-experimental "$out/ai-tells-experimental"
+    cp ${valeAiTells}/styles/ai-tells-commits/*.yml "$out/ai-tells-commits/"
+    cp -r ${valeAiTells}/styles/ai-tells-experimental "$out/ai-tells-experimental"
     # vale resolves a `script:` rule against <StylesPath>/config/scripts, so
-    # the Tengo files come from the package's sibling config/scripts directory
+    # the Tengo files come from the sibling config/scripts directory
     # (upstream keeps them beside the style directory, never inside it).
     mkdir -p "$out/config/scripts"
-    cp ${aiTellsExperimental}/*/styles/config/scripts/*.tengo "$out/config/scripts/"
+    cp ${valeAiTells}/styles/config/scripts/*.tengo "$out/config/scripts/"
     cp -r ${llmSlop}/*/styles/Slop "$out/Slop"
     cp -r ${llmSlop}/*/styles/STE "$out/STE"
     # vale hands an occurrence rule's observed count to its message as a

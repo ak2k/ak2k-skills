@@ -486,7 +486,8 @@
         "ponytail": "ponytail",
         "pplx-agent-tools": "pplx-agent-tools",
         "surefetch": "surefetch",
-        "treefmt-nix": "treefmt-nix_2"
+        "treefmt-nix": "treefmt-nix_2",
+        "vale-ai-tells": "vale-ai-tells"
       }
     },
     "surefetch": {
@@ -645,6 +646,23 @@
       "original": {
         "owner": "pyproject-nix",
         "repo": "uv2nix",
+        "type": "github"
+      }
+    },
+    "vale-ai-tells": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1788799371,
+        "narHash": "sha256-TaGGvGxczGJ8qkqXSkS3NnEIuj0+YOWV79CgiyN4PNM=",
+        "owner": "tbhb",
+        "repo": "vale-ai-tells",
+        "rev": "d038c9175825f1453d2bcea62d6ac031a66e7e33",
+        "type": "github"
+      },
+      "original": {
+        "owner": "tbhb",
+        "ref": "v1.34.0",
+        "repo": "vale-ai-tells",
         "type": "github"
       }
     }
