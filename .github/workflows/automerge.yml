@@ -104,7 +104,8 @@ jobs:
               // else. Mirrors the human-review intent of the renovate.json
               // packageRule (which only gates Renovate's own --automerge flag,
               // not this direct-merge workflow).
-              const blockedInputs = ["llm-agents"];
+              // vale-ai-tells: each release needs prose-gate's tuning pass first.
+              const blockedInputs = ["llm-agents", "vale-ai-tells"];
               const fetchLock = (ref) =>
                 github.rest.repos.getContent({ owner, repo, path: "flake.lock", ref })
                   .then((r) => JSON.parse(Buffer.from(r.data.content, "base64").toString()))

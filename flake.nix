@@ -66,7 +66,8 @@
 
     # vale-ai-tells — the ai-tells style packages prose-gate lints with. Each
     # release adds error-level rules, so a bump needs prose-gate's tuning pass
-    # (renovate.json keeps its updates out of automerge).
+    # before it merges: renovate.json turns off Renovate's automerge for it, and
+    # .github/workflows/automerge.yml blocks any PR that moves its locked rev.
     vale-ai-tells.url = "github:tbhb/vale-ai-tells/v1.37.0";
     vale-ai-tells.flake = false;
 
