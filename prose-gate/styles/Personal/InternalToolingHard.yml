@@ -1,0 +1,14 @@
+extends: existence
+message: "Internal tooling name: '%s'. Present the conclusion, not the process."
+description: >
+  Process scaffolding must never appear in recipient-facing text: no subagents, reviewer panels, persona names, or ce-* skill names. Write first-person and state the finding.
+level: error
+ignorecase: true
+tokens:
+  - subagents?
+  - sub-agents?
+  - reviewer personas?
+  - persona panel
+  - reviewer panel
+  - 'ce-[a-z][a-z-]+'
+  - compound-engineering

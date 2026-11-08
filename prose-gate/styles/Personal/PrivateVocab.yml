@@ -1,0 +1,14 @@
+extends: existence
+message: "Private-review vocabulary: '%s'. Rewrite for external readers."
+description: >
+  Working-doc words from the personal language-editing catalog. They belong in private drafts and session notes, never in PR bodies, commit messages, advisories, or maintainer email.
+level: error
+ignorecase: true
+tokens:
+  - five-reviewer
+  - strictly stronger
+  - by construction
+  - load-bearing
+  - structurally simpler
+  - strikingly
+  - supersedes

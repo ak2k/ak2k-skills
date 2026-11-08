@@ -1,0 +1,12 @@
+extends: existence
+message: "Possible internal-tooling reference: '%s'. Fine when the text is genuinely about the tool; never as a description of your process."
+description: >
+  Ambiguous forms of the internal-tooling rule: these words are legitimate when the subject is the tool itself (docs about Claude, a test harness in code), and banned when they narrate how the text was produced. Warning level so a human adjudicates.
+level: warning
+ignorecase: false
+tokens:
+  - Claude
+  - Anthropic
+  - claude-code
+  - harness
+  - orchestrator

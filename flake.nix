@@ -196,6 +196,7 @@
             officecli = inputs.llm-agents.packages.${system}.officecli;
             officecli-skill = officecliSkill;
             pplx-agent-tools = inputs.pplx-agent-tools.packages.${system}.default;
+            prose-gate = pkgs.callPackage ./prose-gate { };
           };
 
           # Renovate's post-upgrade task for msgvault bumps; see renovate.json.
