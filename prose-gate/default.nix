@@ -73,8 +73,11 @@ let
   '';
 
   # Package-rule overrides, tuned on the author's own agent-written commits and
-  # PR bodies (2026-08-26; re-measured 2026-09-10 over 40 merged PR bodies and
-  # 60 commit bodies at v1.34.0). The invariant both passes serve: only a tell
+  # PR bodies (2026-08-26; re-measured 2026-11-08 at v1.37.0 over 40 merged PR
+  # bodies and 60 commit bodies: tuned, the PR bodies draw 42 errors, 11
+  # warnings and 26 suggestions, 19 of 40 with an error; the commit bodies draw
+  # 26 errors in prose mode and 30 with --commit-msg). The invariant every pass
+  # serves: only a tell
   # that is almost always right in this register may exit 1. A rule that fires
   # on the literal technical sense of a word in already-accepted text is off;
   # a real tell that is merely too common in the house vocabulary to fail on
@@ -93,7 +96,9 @@ let
   # uses literally: "shape", "gates on", "survives a restart", and the
   # anthropomorphism rules v1.34 widened and added ("the warning cannot
   # decide", "the healthy poll"). AnthropomorphicJustification stays at error;
-  # it has no literal reading here.
+  # it has no literal reading here. ConsequenceClause joins them for the
+  # construction rather than a word: the ", so the check goes red" inference
+  # appears in 3 of 40 accepted PR bodies.
   #
   # Advisory, kept visible but never fatal: VerbTricolon's regex over-matches
   # across line breaks, CataphoricForecasting flags ordinary forward
@@ -118,6 +123,7 @@ let
     ai-tells.EnforcementMetaphors = warning
     ai-tells.AnthropomorphicCognition = warning
     ai-tells.AnthropomorphicAdjectives = warning
+    ai-tells.ConsequenceClause = warning
     ai-tells-experimental.PassiveVoice = NO
     ai-tells-experimental.PassiveVoiceAdverb = NO
     ai-tells-experimental.PassiveDensity = NO

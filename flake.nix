@@ -65,8 +65,9 @@
     surefetch.url = "github:ak2k/surefetch/ae112488003bad9f96d08f159e2fe9dfb64689bc";
 
     # vale-ai-tells — the ai-tells style packages prose-gate lints with. Each
-    # release adds error-level rules, so a bump needs prose-gate's tuning pass.
-    vale-ai-tells.url = "github:tbhb/vale-ai-tells/v1.34.0";
+    # release adds error-level rules, so a bump needs prose-gate's tuning pass
+    # (renovate.json keeps its updates out of automerge).
+    vale-ai-tells.url = "github:tbhb/vale-ai-tells/v1.37.0";
     vale-ai-tells.flake = false;
 
     # Companion skills that prose-gate's rewrite step loads; each repo is a

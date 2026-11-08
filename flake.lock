@@ -652,16 +652,16 @@
     "vale-ai-tells": {
       "flake": false,
       "locked": {
-        "lastModified": 1788799371,
-        "narHash": "sha256-TaGGvGxczGJ8qkqXSkS3NnEIuj0+YOWV79CgiyN4PNM=",
+        "lastModified": 1789442525,
+        "narHash": "sha256-GwgAMjcxFqjuGqTc8OP5uvJb2jQiRhkIBxM+DQpauME=",
         "owner": "tbhb",
         "repo": "vale-ai-tells",
-        "rev": "d038c9175825f1453d2bcea62d6ac031a66e7e33",
+        "rev": "dd60c5dc0d5432f71b0113fe2003fb06d069a71f",
         "type": "github"
       },
       "original": {
         "owner": "tbhb",
-        "ref": "v1.34.0",
+        "ref": "v1.37.0",
         "repo": "vale-ai-tells",
         "type": "github"
       }
