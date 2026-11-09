@@ -95,17 +95,13 @@ jobs:
               );
               if (!requiredChecks.every((name) => checks.get(name)?.conclusion === "success")) continue;
 
-              // Carve-out: block automerge for flake.lock changes that touch
-              // supply-chain-sensitive inputs. llm-agents ships cli-proxy-api,
-              // which stores Codex OAuth refresh tokens in cleartext on disk —
-              // a malicious upstream commit reaches token-exfil one deploy
-              // later. Catches both per-input PRs and lockFileMaintenance
-              // bundles that silently bump llm-agents along with everything
-              // else. Mirrors the human-review intent of the renovate.json
-              // packageRule (which only gates Renovate's own --automerge flag,
-              // not this direct-merge workflow).
-              // vale-ai-tells: each release needs prose-gate's tuning pass first.
-              const blockedInputs = ["llm-agents", "vale-ai-tells"];
+              // Carve-out: hold any PR whose flake.lock moves a listed input,
+              // whether a per-input PR or a lockFileMaintenance bundle.
+              // vale-ai-tells: each release adds error-level rules that need
+              // prose-gate's tuning pass before merge. llm-agents is not held:
+              // downstream flakes override it with their own pin through
+              // `follows`, so this repo's lock of it reaches nothing they build.
+              const blockedInputs = ["vale-ai-tells"];
               const fetchLock = (ref) =>
                 github.rest.repos.getContent({ owner, repo, path: "flake.lock", ref })
                   .then((r) => JSON.parse(Buffer.from(r.data.content, "base64").toString()))
@@ -113,7 +109,7 @@ jobs:
               // Compare the head flake.lock against the MERGE BASE, not
               // pr.base.ref (main's moving tip). An automated lock update
               // landing on main after the PR branched otherwise makes the PR's
-              // older lockfile differ from main's on llm-agents even though the
+              // older lockfile differ from main's on a held input even though the
               // PR never touched flake.lock — a false-positive block.
               const { data: cmp } = await github.rest.repos.compareCommitsWithBasehead({
                 owner,
