@@ -7,13 +7,12 @@
   "nix": {
     "enabled": true
   },
-  "automerge": true,
+  "rebaseWhen": "behind-base-branch",
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": [
       "before 6am on monday"
-    ],
-    "automerge": true
+    ]
   },
   "postUpgradeTasks": {
     "description": [

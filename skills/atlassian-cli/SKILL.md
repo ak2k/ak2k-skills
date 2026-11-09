@@ -74,7 +74,7 @@ atlassian-cli tools | awk '{print $1}'    # names only, ~6x cheaper
 ```
 
 Nearly every tool takes `cloudId` (site UUID *or* hostname like
-`kanerai.atlassian.net`). Get it once from `getAccessibleAtlassianResources`
+`example.atlassian.net`). Get it once from `getAccessibleAtlassianResources`
 and reuse it.
 
 # Finding things
