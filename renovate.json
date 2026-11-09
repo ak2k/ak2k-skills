@@ -7,13 +7,11 @@
   "nix": {
     "enabled": true
   },
-  "automerge": true,
   "lockFileMaintenance": {
     "enabled": true,
     "schedule": [
       "before 6am on monday"
-    ],
-    "automerge": true
+    ]
   },
   "postUpgradeTasks": {
     "description": [
