@@ -74,7 +74,7 @@
     # Companion skills that prose-gate's rewrite step loads; each repo is a
     # SKILL.md tree with no flake.
     # humanizer: the general de-AI rewrite, registered straight from the input.
-    humanizer.url = "github:blader/humanizer/v3.1.0";
+    humanizer.url = "github:blader/humanizer/v4.0.0";
     humanizer.flake = false;
     # asd-ste100: controlled-English rewrite for --ste findings. Upstream cuts
     # no tags, so it is pinned by commit for Renovate's digest PRs.
