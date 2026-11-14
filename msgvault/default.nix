@@ -19,7 +19,7 @@
 let
   # Renovate refreshes both hashes on every msgvault bump by running
   # `nix run .#msgvault-update-hashes` (see renovate.json).
-  webHash = "sha256-X9YLzi+iODzkuZZqo1rHqDM2dT2XIrWX1Az/njwmAZk=";
+  webHash = "sha256-mIQ2werDpenWWNDz5CjpLFEsNhMxEZv+YeNjTVopPDk=";
   vendorHash = "sha256-ZC3/LEAduWBG5gHxBVIMHSj6jJRd0hm1Mvv5gA+d+ws=";
 
   # The web UI that `msgvault serve` embeds; without it the binary carries
