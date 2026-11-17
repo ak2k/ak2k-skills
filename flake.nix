@@ -78,7 +78,7 @@
     humanizer.flake = false;
     # asd-ste100: controlled-English rewrite for --ste findings. Upstream cuts
     # no tags, so it is pinned by commit for Renovate's digest PRs.
-    asd-ste100.url = "github:danyuchn/asd-ste100-skill/9c351694439ea1171f36c65b91ba661e7a0499c8";
+    asd-ste100.url = "github:danyuchn/asd-ste100-skill/707362731928d0d92526c066df15dbbe6a378c07";
     asd-ste100.flake = false;
     # ponytail: the code-minimalism skill and its diff review, which the
     # Ponytail cut points at. Nested inside prose-gate's skill output rather
