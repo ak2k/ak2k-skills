@@ -62,7 +62,7 @@
     # closure pins its own, and overriding it risks the C-extension build.
     # Pinned by commit so Renovate opens a digest PR on each upstream merge; a bare branch URL
     # only moves in the weekly lock-file maintenance.
-    surefetch.url = "github:ak2k/surefetch/16c60e98cd12df5fd20ff802891d874c931810b1";
+    surefetch.url = "github:ak2k/surefetch/fc8f575bf0707e36b1b8a977c562b8278f8a999d";
 
     # vale-ai-tells — the ai-tells style packages prose-gate lints with. Each
     # release adds error-level rules, so a bump needs prose-gate's tuning pass
