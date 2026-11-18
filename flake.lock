@@ -499,17 +499,17 @@
         "uv2nix": "uv2nix_2"
       },
       "locked": {
-        "lastModified": 1795001545,
-        "narHash": "sha256-yatYS29bGjrvIhighPafzwN5aTooHsMRPtyjKwK2maw=",
+        "lastModified": 1795004633,
+        "narHash": "sha256-gwhJpluXduVc+HBKKYllB0NBURCGkL6dOKlRD2QtyAs=",
         "owner": "ak2k",
         "repo": "surefetch",
-        "rev": "ef4d55fa115c5729dbfe3e0bce9159f86c20e7bd",
+        "rev": "16c60e98cd12df5fd20ff802891d874c931810b1",
         "type": "github"
       },
       "original": {
         "owner": "ak2k",
         "repo": "surefetch",
-        "rev": "ef4d55fa115c5729dbfe3e0bce9159f86c20e7bd",
+        "rev": "16c60e98cd12df5fd20ff802891d874c931810b1",
         "type": "github"
       }
     },
